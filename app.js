@@ -916,11 +916,8 @@ function pintarAjustes() {
   const filaStepper = (clave, titulo, desc, unidad, min, max) =>
     '<div class="fila-ajuste">' +
     '<span class="fila-texto"><strong>' + titulo + '</strong><small>' + desc + '</small></span>' +
-    '<div class="stepper">' +
-    '<button type="button" data-accion="step-config" data-clave="' + clave + '" data-delta="-1" data-min="' + min + '" data-max="' + max + '">−</button>' +
-    '<span>' + c[clave] + unidad + '</span>' +
-    '<button type="button" data-accion="step-config" data-clave="' + clave + '" data-delta="1" data-min="' + min + '" data-max="' + max + '">＋</button>' +
-    '</div></div>';
+    stepperHTML(clave, c[clave], unidad, min, max, { accion: "step-config", scope: "config" }) +
+    '</div>';
 
   let html = '<div class="seccion-ajustes"><h2>Durante el entrenamiento</h2>';
   html += filaToggle("voz", "Voz", "Dice abajo, arriba, aguanta y descanso");
@@ -1016,16 +1013,22 @@ function abrirEditorEjercicio(id) {
   abrirHoja(id ? "Editar ejercicio" : "Nuevo ejercicio", htmlEditorEjercicio(), true);
 }
 
-function stepperHTML(campo, valor, sufijo, min, max) {
+function stepperHTML(campo, valor, sufijo, min, max, opciones) {
+  const op = opciones || {};
+  const accion = op.accion || "editor-step";
+  const scope = op.scope || "ejercicio";
+  const unidad = sufijo ? '<span class="stepper-unidad">' + sufijo.trim() + '</span>' : "";
   return '<div class="stepper">' +
-    '<button type="button" data-accion="editor-step" data-campo="' + campo + '" data-delta="-1" data-min="' + min + '" data-max="' + max + '">−</button>' +
-    '<span>' + valor + sufijo + '</span>' +
-    '<button type="button" data-accion="editor-step" data-campo="' + campo + '" data-delta="1" data-min="' + min + '" data-max="' + max + '">＋</button>' +
+    '<button type="button" data-accion="' + accion + '" data-campo="' + campo + '" data-delta="-1" data-min="' + min + '" data-max="' + max + '">−</button>' +
+    '<input type="number" class="stepper-input" inputmode="numeric" data-campo="' + campo + '" data-scope="' + scope + '" data-min="' + min + '" data-max="' + max + '" min="' + min + '" max="' + max + '" step="1" value="' + (Number(valor) || 0) + '">' +
+    unidad +
+    '<button type="button" data-accion="' + accion + '" data-campo="' + campo + '" data-delta="1" data-min="' + min + '" data-max="' + max + '">＋</button>' +
     '</div>';
 }
 
-function filaEditor(titulo, campo, valor, sufijo, min, max) {
-  return '<div class="fila-ajuste-editor"><span>' + titulo + '</span>' + stepperHTML(campo, valor, sufijo, min, max) + '</div>';
+function filaEditor(titulo, campo, valor, sufijo, min, max, scope, accion) {
+  return '<div class="fila-ajuste-editor"><span>' + titulo + '</span>' +
+    stepperHTML(campo, valor, sufijo, min, max, { scope: scope || "ejercicio", accion: accion || "editor-step" }) + '</div>';
 }
 
 function htmlEditorEjercicio() {
@@ -1170,17 +1173,19 @@ function abrirEditorEntrada(uidEnt) {
 }
 
 function htmlEditorEntrada(ent, ej) {
+  const fila = (titulo, campo, valor, sufijo, min, max) =>
+    filaEditor(titulo, campo, valor, sufijo, min, max, "entrada", "entrada-step");
   let campos;
   if (esDescanso(ej)) {
-    campos = filaEditor("Duración", "segundos", Number(ent.segundos) || 60, " s", 5, 900);
+    campos = fila("Duración", "segundos", Number(ent.segundos) || 60, " s", 5, 900);
   } else {
     campos =
-      filaEditor("Repeticiones", "reps", ent.reps, "", 1, 200) +
-      filaEditor("Bajada / atrás", "bajadaSeg", ent.bajadaSeg, " s", 0, 60) +
-      filaEditor("Aguantar abajo", "aguanteAbajoSeg", ent.aguanteAbajoSeg || 0, " s", 0, 60) +
-      filaEditor("Subida / adelante", "subidaSeg", ent.subidaSeg, " s", 0, 60) +
-      filaEditor("Aguantar arriba", "aguanteArribaSeg", ent.aguanteArribaSeg || 0, " s", 0, 60) +
-      filaEditor("Descanso después", "descansoSeg", ent.descansoSeg || 0, " s", 0, 900);
+      fila("Repeticiones", "reps", ent.reps, "", 1, 200) +
+      fila("Bajada / atrás", "bajadaSeg", ent.bajadaSeg, " s", 0, 60) +
+      fila("Aguantar abajo", "aguanteAbajoSeg", ent.aguanteAbajoSeg || 0, " s", 0, 60) +
+      fila("Subida / adelante", "subidaSeg", ent.subidaSeg, " s", 0, 60) +
+      fila("Aguantar arriba", "aguanteArribaSeg", ent.aguanteArribaSeg || 0, " s", 0, 60) +
+      fila("Descanso después", "descansoSeg", ent.descansoSeg || 0, " s", 0, 900);
   }
 
   const tiempoSerie = esDescanso(ej)
@@ -1614,7 +1619,7 @@ document.addEventListener("click", async (ev) => {
       break;
     }
     case "step-config": {
-      const clave = el.dataset.clave;
+      const clave = el.dataset.clave || el.dataset.campo;
       const delta = Number(el.dataset.delta);
       const min = Number(el.dataset.min);
       const max = Number(el.dataset.max);
@@ -1650,8 +1655,74 @@ document.addEventListener("click", async (ev) => {
 
 /* ---------------- campos de texto y archivos ---------------- */
 
+function objetoStepper(scope) {
+  if (scope === "config") return estado.config;
+  if (scope === "ejercicio") return estado.borradorEj;
+  if (scope === "entrada") {
+    const plan = estado.planBorrador;
+    if (!plan) return null;
+    return plan.entradas.find(e => e.uid === estado.entradaUid) || null;
+  }
+  return null;
+}
+
+function sincronizarSteppers(scope) {
+  const obj = objetoStepper(scope);
+  if (!obj) return;
+  $$(".stepper-input").forEach(inp => {
+    if (inp.dataset.scope !== scope) return;
+    inp.value = String(Number(obj[inp.dataset.campo]) || 0);
+  });
+}
+
+function actualizarTotalEntrada() {
+  const plan = estado.planBorrador;
+  const ent = plan && plan.entradas.find(e => e.uid === estado.entradaUid);
+  if (!ent) return;
+  const ej = ejercicioPorId(ent.ejercicioId);
+  if (!ej) return;
+  const tiempo = esDescanso(ej)
+    ? Math.max(1, Number(ent.segundos) || 60)
+    : Math.max(1, Number(ent.reps) || 1) * ((Number(ent.bajadaSeg) || 0) + (Number(ent.subidaSeg) || 0));
+  const total = $("#hoja-cuerpo .total-plan strong");
+  if (total) total.textContent = fmtTiempo(tiempo);
+  const nota = $("#hoja-cuerpo .editor > .nota");
+  if (nota) nota.textContent = ej.nombre + (esDescanso(ej) ? "" : " · Serie " + (Number(ent.reps) || 1) + " reps");
+}
+
+function normalizarStepper(input) {
+  const scope = input.dataset.scope;
+  const campo = input.dataset.campo;
+  const obj = objetoStepper(scope);
+  if (!obj) return;
+  const min = Number(input.dataset.min) || 0;
+  const max = Number(input.dataset.max);
+  let v = Math.round(Number(input.value));
+  if (input.value === "" || !isFinite(v)) v = min;
+  obj[campo] = clamp(v, min, isFinite(max) ? max : 900);
+  if (scope !== "config") {
+    obj.aguanteAbajoSeg = clamp(Number(obj.aguanteAbajoSeg) || 0, 0, Number(obj.bajadaSeg) || 0);
+    obj.aguanteArribaSeg = clamp(Number(obj.aguanteArribaSeg) || 0, 0, Number(obj.subidaSeg) || 0);
+  }
+  sincronizarSteppers(scope);
+  if (scope === "config") {
+    guardarConfig();
+  } else if (scope === "entrada") {
+    persistirPlan();
+    actualizarTotalEntrada();
+  }
+}
+
 document.addEventListener("input", (ev) => {
   const t = ev.target;
+  if (t.classList && t.classList.contains("stepper-input")) {
+    const obj = objetoStepper(t.dataset.scope);
+    if (!obj) return;
+    const n = Number(t.value);
+    obj[t.dataset.campo] = t.value === "" ? 0 : (isFinite(n) ? n : 0);
+    if (t.dataset.scope === "entrada") actualizarTotalEntrada();
+    return;
+  }
   if (t.id === "ej-nombre" && estado.borradorEj) estado.borradorEj.nombre = t.value;
   else if (t.id === "ej-emoji" && estado.borradorEj) estado.borradorEj.emoji = t.value;
   else if (t.id === "ej-grupo" && estado.borradorEj) estado.borradorEj.grupo = t.value;
@@ -1667,6 +1738,11 @@ document.addEventListener("input", (ev) => {
 
 document.addEventListener("change", async (ev) => {
   const t = ev.target;
+
+  if (t.classList && t.classList.contains("stepper-input")) {
+    normalizarStepper(t);
+    return;
+  }
 
   if (t.matches("[data-foto]")) {
     const archivo = t.files && t.files[0];

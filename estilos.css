@@ -44,6 +44,7 @@ body{
 button,input{font:inherit;color:inherit}
 button{background:none;border:0;cursor:pointer}
 input{background:none;border:0;outline:none}
+input,textarea{-webkit-user-select:text;user-select:text}
 img{display:block;max-width:100%}
 
 /* ---------- pantallas ---------- */
@@ -576,10 +577,30 @@ img{display:block;max-width:100%}
   background:rgba(255,255,255,.05);
 }
 .stepper button:active{background:rgba(198,255,61,.2)}
-.stepper span{
-  min-width:52px;text-align:center;
-  font-weight:800;font-size:.9rem;
+.stepper-input{
+  width:58px;
+  padding:6px 2px;
+  text-align:center;
+  font-weight:800;
+  font-size:.9rem;
   font-variant-numeric:tabular-nums;
+  color:var(--texto);
+  border-radius:8px;
+  appearance:textfield;
+  -moz-appearance:textfield;
+}
+.stepper-input:focus{
+  background:rgba(198,255,61,.14);
+  box-shadow:0 0 0 1px rgba(198,255,61,.5) inset;
+}
+.stepper-input::-webkit-outer-spin-button,
+.stepper-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.stepper-unidad{
+  min-width:12px;
+  color:var(--tenue);
+  font-size:.76rem;
+  font-weight:700;
+  padding-right:2px;
 }
 .seccion-ajustes{margin-top:22px}
 .seccion-ajustes h2{
