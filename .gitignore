@@ -1,0 +1,7 @@
+# Respaldos personales (no subir a GitHub)
+rutinas-respaldo-*.json
+*respaldo*.json
+*.bak
+.DS_Store
+Thumbs.db
+desktop.ini
