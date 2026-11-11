@@ -375,6 +375,7 @@ const runner = {
   pausaInicio: 0,
   completadas: null,
   repsHechas: 0,
+  repsPorEntrada: {},
   estimado: 0,
   totalMs: 0,
   sufijo: [],
@@ -540,6 +541,7 @@ function iniciarEntrenamiento(plan, desdeIdx) {
   runner.pausadoMs = 0;
   runner.completadas = new Set();
   runner.repsHechas = 0;
+  runner.repsPorEntrada = {};
   runner.voz = estado.config.voz;
   runner.estimado = estimarPlan(plan);
   runner.iniciadoEn = performance.now();
@@ -673,12 +675,18 @@ function bucle() {
 
   programarBucle();
 }
+function sumarRep(entradaId) {
+  if (!entradaId) return;
+  if (!runner.repsPorEntrada) runner.repsPorEntrada = {};
+  runner.repsPorEntrada[entradaId] = (Number(runner.repsPorEntrada[entradaId]) || 0) + 1;
+}
+
 function avanzar() {
   const paso = runner.pasos[runner.idx];
   if (!paso) { terminarEntrenamiento(false); return; }
 
-  if (paso.tipo === "abajo") runner.repsHechas++;
-  else if (paso.tipo === "arriba" && !(Number(paso.ent.bajadaSeg) > 0)) runner.repsHechas++;
+  if (paso.tipo === "abajo") { runner.repsHechas++; sumarRep(paso.entradaId); }
+  else if (paso.tipo === "arriba" && !(Number(paso.ent.bajadaSeg) > 0)) { runner.repsHechas++; sumarRep(paso.entradaId); }
 
   const siguiente = runner.pasos[runner.idx + 1];
   if (paso.tipo === "abajo" || paso.tipo === "arriba") {
@@ -734,6 +742,91 @@ function saltar() {
   runner.idx = j;
   if (runner.idx >= runner.pasos.length) { terminarEntrenamiento(false); return; }
   empezarPaso();
+}
+
+function esPasoRep(paso) {
+  return !!paso && (paso.tipo === "abajo" || paso.tipo === "arriba");
+}
+
+function esInicioRep(i) {
+  const paso = runner.pasos[i];
+  if (!esPasoRep(paso)) return false;
+  const prev = runner.pasos[i - 1];
+  return !(esPasoRep(prev) && prev.entradaId === paso.entradaId && prev.rep === paso.rep);
+}
+
+function inicioRepActual() {
+  const paso = runner.pasos[runner.idx];
+  if (!esPasoRep(paso)) return runner.idx;
+  let i = runner.idx;
+  while (
+    i > 0 &&
+    esPasoRep(runner.pasos[i - 1]) &&
+    runner.pasos[i - 1].entradaId === paso.entradaId &&
+    runner.pasos[i - 1].rep === paso.rep
+  ) i--;
+  return i;
+}
+
+function regresar() {
+  if (!runner.activo) return;
+  if (!runner.pasos[runner.idx]) return;
+
+  const limite = inicioRepActual();
+  let objetivo = -1;
+  for (let i = limite - 1; i >= 0; i--) {
+    if (esInicioRep(i)) { objetivo = i; break; }
+  }
+
+  if (objetivo < 0) {
+    aviso("Ya estás en la primera repetición");
+    vibrar(12);
+    return;
+  }
+
+  const destino = runner.pasos[objetivo];
+  const eIdx = destino.entradaIdx;
+
+  // Deshacer series completadas desde la entrada destino en adelante.
+  const quitar = new Set();
+  runner.pasos.forEach(p => {
+    if (p.entradaId && p.entradaIdx >= eIdx) quitar.add(p.entradaId);
+  });
+  quitar.forEach(u => runner.completadas.delete(u));
+
+  // Deshacer repeticiones: la entrada destino conserva solo las reps anteriores a la elegida.
+  const reps = runner.repsPorEntrada || {};
+  const previas = Number(reps[destino.entradaId]) || 0;
+  reps[destino.entradaId] = Math.min(previas, destino.rep - 1);
+  const borrar = new Set();
+  runner.pasos.forEach(p => {
+    if (p.entradaId && p.entradaIdx > eIdx) borrar.add(p.entradaId);
+  });
+  borrar.forEach(u => { delete reps[u]; });
+  runner.repsPorEntrada = reps;
+  runner.repsHechas = Object.keys(reps).reduce((acc, k) => acc + (Number(reps[k]) || 0), 0);
+
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  runner.idx = objetivo;
+
+  if (runner.pausado) {
+    const paso = runner.pasos[runner.idx];
+    runner.restanteMs = paso.dur * 1000;
+    runner.finPaso = performance.now() + runner.restanteMs;
+    runner.corriendo = false;
+    runner.ultimoSeg = -1;
+    runner.avisoAguante = false;
+    pintarPaso(paso);
+    $("#pantalla-runner").classList.add("pausado");
+    $("#fase-etiqueta").textContent = "EN PAUSA";
+    $("#btn-extra").hidden = true;
+    guardarSnapshot();
+  } else {
+    empezarPaso();
+  }
+
+  vibrar(18);
+  aviso("Rep " + destino.rep + "/" + destino.reps + " · " + destino.ej.nombre);
 }
 
 function masTiempo() {
@@ -1472,6 +1565,7 @@ document.addEventListener("click", async (ev) => {
     }
     case "pausa": pausar(); break;
     case "saltar": saltar(); break;
+    case "regresar": regresar(); break;
     case "extra": masTiempo(); break;
     case "voz": {
       runner.voz = !runner.voz;
