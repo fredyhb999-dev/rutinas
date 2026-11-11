@@ -793,8 +793,11 @@ img{display:block;max-width:100%}
   transition:opacity .2s ease,transform .2s ease;
   max-width:86vw;
   text-align:center;
+  pointer-events:none;
 }
 .toast.visible{opacity:1;transform:translate(-50%,0)}
+/* En el entrenamiento, el aviso va arriba de los controles para no tapar los botones. */
+.toast.sobre-controles{bottom:calc(116px + env(safe-area-inset-bottom))}
 
 @media (max-height:640px){
   .runner-foto{max-height:26dvh}

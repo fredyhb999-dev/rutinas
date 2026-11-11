@@ -90,6 +90,7 @@ let avisoTimer = 0;
 function aviso(texto) {
   const el = $("#toast");
   el.textContent = texto;
+  el.classList.toggle("sobre-controles", !!$(".pantalla.runner.activa"));
   el.hidden = false;
   requestAnimationFrame(() => el.classList.add("visible"));
   clearTimeout(avisoTimer);
