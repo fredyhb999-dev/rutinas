@@ -1214,18 +1214,23 @@ function htmlEditorPlan() {
     '<button type="button" class="dia-chip' + (estado.semana[d] === plan.id ? " on" : "") + '" data-accion="plan-dia" data-dia="' + d + '">' + DIAS_CORTOS[i] + '</button>'
   ).join("");
 
+  const asaHtml = '<button type="button" class="asa-arrastre" aria-label="Mover serie" title="Mantén presionado y arrastra">' +
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>' +
+    '</button>';
+
   let filas = "";
   plan.entradas.forEach((ent, i) => {
     const ej = ejercicioPorId(ent.ejercicioId);
     if (!ej) {
-      filas += '<div class="fila-editor"><span class="emoji">⚠️</span><span class="fila-texto"><strong>Ejercicio eliminado</strong><small>Tócalo para quitarlo</small></span>' +
+      filas += '<div class="fila-editor" data-uid="' + ent.uid + '">' + asaHtml +
+        '<span class="emoji">⚠️</span><span class="fila-texto"><strong>Ejercicio eliminado</strong><small>Tócalo para quitarlo</small></span>' +
         '<span class="acciones-fila"><button type="button" data-accion="plan-borrar-entrada" data-uid="' + ent.uid + '">✕</button></span></div>';
       return;
     }
     const detalle = esDescanso(ej)
       ? (Number(ent.segundos) || 60) + " s"
       : ent.reps + " reps · " + ent.bajadaSeg + "s + " + ent.subidaSeg + "s";
-    filas += '<div class="fila-editor">' +
+    filas += '<div class="fila-editor" data-uid="' + ent.uid + '">' + asaHtml +
       '<span class="emoji">' + esc(ej.emoji || "💪") + '</span>' +
       '<button type="button" class="fila-texto" data-accion="editar-entrada" data-uid="' + ent.uid + '">' +
       '<strong>' + esc(ej.nombre) + '</strong><small>' + detalle + '</small></button>' +
@@ -1509,6 +1514,212 @@ async function importarArchivo(archivo) {
     aviso("Respaldo importado");
   });
 }
+/* ---------------- arrastrar series para reordenar ---------------- */
+
+const arrastre = {
+  activo: false,
+  asa: null,
+  fila: null,
+  uid: null,
+  idx: -1,
+  destino: -1,
+  slot: -1,
+  pointerId: null,
+  startY: 0,
+  ultimoY: 0,
+  offsetY: 0,
+  top0: 0,
+  movido: false,
+  fantasma: null,
+  raf: 0
+};
+
+function filasEditor() {
+  const cuerpo = $("#hoja-cuerpo");
+  return cuerpo ? Array.from(cuerpo.querySelectorAll(".fila-editor")) : [];
+}
+
+function iniciarArrastre(ev) {
+  if (arrastre.activo) return;
+  if (!ev.target || !ev.target.closest) return;
+  const asa = ev.target.closest(".asa-arrastre");
+  if (!asa) return;
+  const plan = estado.planBorrador;
+  if (!plan || !plan.entradas || plan.entradas.length < 2) return;
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  if (ev.isPrimary === false) return;
+
+  const fila = asa.closest(".fila-editor");
+  if (!fila) return;
+  const uidEnt = fila.dataset.uid;
+  const idx = plan.entradas.findIndex(e => e.uid === uidEnt);
+  if (idx < 0) return;
+
+  ev.preventDefault();
+
+  const rect = fila.getBoundingClientRect();
+  const clon = fila.cloneNode(true);
+  clon.classList.remove("destino-antes", "destino-despues", "fila-origen");
+  clon.classList.add("fila-fantasma");
+  clon.removeAttribute("data-uid");
+  clon.style.left = rect.left + "px";
+  clon.style.top = rect.top + "px";
+  clon.style.width = rect.width + "px";
+  document.body.appendChild(clon);
+
+  fila.classList.add("fila-origen");
+
+  arrastre.activo = true;
+  arrastre.asa = asa;
+  arrastre.fila = fila;
+  arrastre.uid = uidEnt;
+  arrastre.idx = idx;
+  arrastre.destino = idx;
+  arrastre.slot = idx;
+  arrastre.pointerId = ev.pointerId;
+  arrastre.startY = ev.clientY;
+  arrastre.ultimoY = ev.clientY;
+  arrastre.offsetY = ev.clientY - rect.top;
+  arrastre.top0 = rect.top;
+  arrastre.movido = false;
+  arrastre.fantasma = clon;
+
+  document.body.classList.add("arrastrando-lista");
+  try { asa.setPointerCapture(ev.pointerId); } catch (e) {}
+  moverFantasma(ev.clientY);
+  calcularDestino(ev.clientY);
+  arrastre.raf = requestAnimationFrame(bucleArrastre);
+}
+
+function moverFantasma(y) {
+  if (!arrastre.fantasma) return;
+  const dy = y - arrastre.offsetY - arrastre.top0;
+  arrastre.fantasma.style.transform = "translate3d(0," + dy + "px,0) scale(1.02)";
+}
+
+function calcularDestino(y) {
+  const filas = filasEditor();
+  if (!filas.length) return;
+  let slot = filas.length;
+  for (let i = 0; i < filas.length; i++) {
+    const r = filas[i].getBoundingClientRect();
+    if (y < r.top + r.height / 2) { slot = i; break; }
+  }
+  let destino = slot > arrastre.idx ? slot - 1 : slot;
+  if (destino < 0) destino = 0;
+  if (destino > filas.length - 1) destino = filas.length - 1;
+
+  const cambio = destino !== arrastre.destino || slot !== arrastre.slot;
+  arrastre.destino = destino;
+  arrastre.slot = slot;
+  pintarDestino(filas);
+  if (cambio && arrastre.movido) vibrar(6);
+}
+
+function pintarDestino(filas) {
+  filas.forEach(f => f.classList.remove("destino-antes", "destino-despues"));
+  if (arrastre.destino === arrastre.idx) return;
+  if (arrastre.slot >= filas.length) filas[filas.length - 1].classList.add("destino-despues");
+  else filas[arrastre.slot].classList.add("destino-antes");
+}
+
+function moverArrastre(ev) {
+  if (!arrastre.activo) return;
+  if (arrastre.pointerId !== null && ev.pointerId !== arrastre.pointerId) return;
+  ev.preventDefault();
+  arrastre.ultimoY = ev.clientY;
+  if (!arrastre.movido && Math.abs(ev.clientY - arrastre.startY) > 3) {
+    arrastre.movido = true;
+    vibrar(10);
+  }
+  moverFantasma(ev.clientY);
+  calcularDestino(ev.clientY);
+}
+
+function bucleArrastre() {
+  if (!arrastre.activo) return;
+  if (!arrastre.movido) {
+    arrastre.raf = requestAnimationFrame(bucleArrastre);
+    return;
+  }
+  const cuerpo = $("#hoja-cuerpo");
+  if (!cuerpo) return;
+  const r = cuerpo.getBoundingClientRect();
+  const margen = 64;
+  let dy = 0;
+  if (arrastre.ultimoY < r.top + margen) {
+    dy = -Math.ceil(18 * Math.min(1, (r.top + margen - arrastre.ultimoY) / margen));
+  } else if (arrastre.ultimoY > r.bottom - margen) {
+    dy = Math.ceil(18 * Math.min(1, (arrastre.ultimoY - (r.bottom - margen)) / margen));
+  }
+  if (dy) {
+    const antes = cuerpo.scrollTop;
+    cuerpo.scrollTop = antes + dy;
+    if (cuerpo.scrollTop !== antes) calcularDestino(arrastre.ultimoY);
+  }
+  if (arrastre.activo) arrastre.raf = requestAnimationFrame(bucleArrastre);
+}
+
+function limpiarArrastre() {
+  cancelAnimationFrame(arrastre.raf);
+  arrastre.raf = 0;
+  if (arrastre.asa) {
+    try { arrastre.asa.releasePointerCapture(arrastre.pointerId); } catch (e) {}
+  }
+  if (arrastre.fantasma && arrastre.fantasma.parentNode) {
+    arrastre.fantasma.parentNode.removeChild(arrastre.fantasma);
+  }
+  if (arrastre.fila) arrastre.fila.classList.remove("fila-origen");
+  filasEditor().forEach(f => f.classList.remove("destino-antes", "destino-despues"));
+  document.body.classList.remove("arrastrando-lista");
+  arrastre.activo = false;
+  arrastre.asa = null;
+  arrastre.fila = null;
+  arrastre.uid = null;
+  arrastre.idx = -1;
+  arrastre.destino = -1;
+  arrastre.slot = -1;
+  arrastre.pointerId = null;
+  arrastre.movido = false;
+  arrastre.fantasma = null;
+}
+
+async function terminarArrastre(ev, cancelado) {
+  if (!arrastre.activo) return;
+  if (ev && ev.pointerId !== undefined && arrastre.pointerId !== null && ev.pointerId !== arrastre.pointerId) return;
+
+  const plan = estado.planBorrador;
+  const uidEnt = arrastre.uid;
+  const idx = arrastre.idx;
+  const destino = arrastre.destino;
+  const cuerpo = $("#hoja-cuerpo");
+  const scroll = cuerpo ? cuerpo.scrollTop : 0;
+  const huboMovimiento = arrastre.movido;
+
+  limpiarArrastre();
+
+  if (cancelado || !huboMovimiento || !plan || destino === idx) return;
+
+  const actual = plan.entradas.findIndex(e => e.uid === uidEnt);
+  if (actual < 0) return;
+  const entrada = plan.entradas[actual];
+  plan.entradas.splice(actual, 1);
+  const pos = Math.max(0, Math.min(destino, plan.entradas.length));
+  plan.entradas.splice(pos, 0, entrada);
+
+  if (cuerpo) {
+    cuerpo.innerHTML = htmlEditorPlan();
+    cuerpo.scrollTop = scroll;
+  }
+  vibrar(20);
+  await persistirPlan();
+}
+
+document.addEventListener("pointerdown", iniciarArrastre);
+window.addEventListener("pointermove", moverArrastre, { passive: false });
+window.addEventListener("pointerup", (ev) => { terminarArrastre(ev, false); });
+window.addEventListener("pointercancel", (ev) => { terminarArrastre(ev, true); });
+
 /* ---------------- eventos ---------------- */
 
 let planNombreTimer = 0;

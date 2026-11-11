@@ -747,6 +747,7 @@ img{display:block;max-width:100%}
 
 /* filas del editor de plan */
 .fila-editor{
+  position:relative;
   display:flex;align-items:center;gap:8px;
   padding:10px;
   border-radius:14px;
@@ -765,6 +766,55 @@ img{display:block;max-width:100%}
   background:rgba(255,255,255,.04);
 }
 .fila-editor .acciones-fila button:active{background:rgba(198,255,61,.18);color:var(--lima)}
+
+/* agarradera para reordenar arrastrando */
+.asa-arrastre{
+  flex:0 0 auto;
+  width:26px;height:44px;margin-left:-4px;
+  border-radius:9px;
+  display:grid;place-items:center;
+  color:var(--tenue);
+  background:transparent;
+  cursor:grab;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-touch-callout:none;
+}
+.asa-arrastre svg{width:18px;height:18px;opacity:.85}
+.asa-arrastre:active{color:var(--lima);background:rgba(198,255,61,.12)}
+
+.fila-origen{opacity:.32;border-style:dashed}
+.fila-origen .asa-arrastre{color:var(--lima)}
+.fila-fantasma{
+  margin:0 !important;
+  z-index:70;
+  pointer-events:none;
+  background:#151d2b;
+  border-color:rgba(198,255,61,.5);
+  box-shadow:0 16px 36px rgba(0,0,0,.6);
+  opacity:.98;
+  transform-origin:50% 50%;
+}
+body.arrastrando-lista,
+body.arrastrando-lista .asa-arrastre{cursor:grabbing}
+
+.fila-editor.destino-antes::before,
+.fila-editor.destino-despues::after{
+  content:"";position:absolute;left:0;right:0;height:3px;
+  border-radius:2px;
+  background:var(--lima);
+  box-shadow:0 0 10px rgba(198,255,61,.65);
+  pointer-events:none;
+}
+.fila-editor.destino-antes::before{top:-5px}
+.fila-editor.destino-despues::after{bottom:-5px}
+
+@media (max-width:380px){
+  .fila-editor{gap:6px}
+  .fila-editor .acciones-fila{gap:1px}
+  .fila-editor .acciones-fila button{width:28px;height:28px;font-size:.82rem}
+  .asa-arrastre{width:24px;height:44px;margin-left:-3px}
+}
 .total-plan{
   display:flex;align-items:center;justify-content:space-between;
   padding:12px 14px;margin:10px 0 4px;
