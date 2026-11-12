@@ -371,6 +371,7 @@ const runner = {
   ultimoSeg: -1,
   avisoAguante: false,
   voz: true,
+  vozTimer: 0,
   iniciadoEn: 0,
   pausadoMs: 0,
   pausaInicio: 0,
@@ -421,18 +422,33 @@ if ("speechSynthesis" in window) {
   window.speechSynthesis.addEventListener("voiceschanged", cargarVoces);
 }
 
-function hablar(texto) {
+function detenerVoz() {
+  if (runner.vozTimer) {
+    clearTimeout(runner.vozTimer);
+    runner.vozTimer = 0;
+  }
+  if ("speechSynthesis" in window) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+  }
+}
+
+function hablar(texto, retraso) {
   if (!runner.voz || !estado.config.voz || !("speechSynthesis" in window)) return;
-  try {
-    const u = new SpeechSynthesisUtterance(texto);
-    u.lang = "es-ES";
-    u.rate = 1.18;
-    u.pitch = 1;
-    const v = voces.find(v => /^es[-_]ES/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
-    if (v) u.voice = v;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-  } catch (e) {}
+  detenerVoz();
+  const espera = Math.max(0, retraso === undefined ? 170 : retraso);
+  runner.vozTimer = setTimeout(() => {
+    runner.vozTimer = 0;
+    if (!runner.voz || !estado.config.voz) return;
+    try {
+      const u = new SpeechSynthesisUtterance(texto);
+      u.lang = "es-ES";
+      u.rate = 1.18;
+      u.pitch = 1;
+      const v = voces.find(v => /^es[-_]ES/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
+      if (v) u.voice = v;
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }, espera);
 }
 
 async function pedirWakeLock() {
@@ -568,6 +584,22 @@ function programarBucle() {
   runner.raf = setTimeout(bucle, 100);
 }
 
+function siguienteEjercicioDesde(idx) {
+  for (let j = idx + 1; j < runner.pasos.length; j++) {
+    const p = runner.pasos[j];
+    if (p.tipo !== "descanso") return p;
+  }
+  return null;
+}
+
+function ejercicioAnteriorDesde(idx) {
+  for (let j = idx - 1; j >= 0; j--) {
+    const p = runner.pasos[j];
+    if (p.tipo !== "descanso") return p;
+  }
+  return null;
+}
+
 function empezarPaso() {
   const paso = runner.pasos[runner.idx];
   if (!paso) { terminarEntrenamiento(false); return; }
@@ -582,7 +614,9 @@ function empezarPaso() {
   if (paso.tipo === "prep") {
     hablar("Prepárate");
   } else if (paso.tipo === "descanso") {
-    hablar("Descanso");
+    const sig = siguienteEjercicioDesde(runner.idx);
+    if (sig && paso.dur >= 8) hablar("Descanso. Sigue " + sig.ej.nombre);
+    else hablar("Descanso");
   } else if (paso.tipo === "abajo") {
     hablar(paso.ej.etiquetaAbajo ? paso.ej.etiquetaAbajo.toLowerCase() : "abajo");
   } else {
@@ -623,7 +657,15 @@ function pintarPaso(paso) {
 
   $("#runner-ejercicio").textContent = (paso.ej.emoji || "💪") + " " + paso.ej.nombre;
   if (paso.tipo === "descanso") {
-    $("#runner-detalle").textContent = "Recupera el aire";
+    const sig = siguienteEjercicioDesde(runner.idx);
+    if (sig) {
+      const prev = ejercicioAnteriorDesde(runner.idx);
+      const misma = prev && prev.ej.id === sig.ej.id;
+      $("#runner-detalle").textContent = "Sigue: " + (sig.ej.emoji || "💪") + " " + sig.ej.nombre +
+        (misma ? " · Serie " + sig.setNum + "/" + sig.setTotal : "");
+    } else {
+      $("#runner-detalle").textContent = "Recupera el aire";
+    }
   } else if (paso.tipo === "prep") {
     $("#runner-detalle").textContent = "Acomódate para empezar";
   } else {
@@ -669,8 +711,8 @@ function bucle() {
 
   if (paso.aguante > 0 && !runner.avisoAguante && restante <= paso.aguante * 1000 + 30) {
     runner.avisoAguante = true;
-    hablar("Aguanta");
     pitido(1020, 0.1, 0.28);
+    hablar("Aguanta");
     vibrar(20);
   }
 
@@ -723,7 +765,7 @@ function pausar() {
     $("#pantalla-runner").classList.add("pausado");
     $("#fase-etiqueta").textContent = "EN PAUSA";
     $("#btn-extra").hidden = true;
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    detenerVoz();
   } else if (runner.pausado) {
     runner.pausadoMs += performance.now() - runner.pausaInicio;
     runner.pausado = false;
@@ -739,7 +781,7 @@ function saltar() {
   const paso = runner.pasos[runner.idx];
   let j = runner.idx + 1;
   while (j < runner.pasos.length && runner.pasos[j].entradaIdx === paso.entradaIdx) j++;
-  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  detenerVoz();
   runner.idx = j;
   if (runner.idx >= runner.pasos.length) { terminarEntrenamiento(false); return; }
   empezarPaso();
@@ -807,7 +849,7 @@ function regresar() {
   runner.repsPorEntrada = reps;
   runner.repsHechas = Object.keys(reps).reduce((acc, k) => acc + (Number(reps[k]) || 0), 0);
 
-  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  detenerVoz();
   runner.idx = objetivo;
 
   if (runner.pausado) {
@@ -853,7 +895,7 @@ async function terminarEntrenamiento(abandonado) {
   clearTimeout(runner.raf);
   liberarWakeLock();
   borrarSnapshot();
-  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  detenerVoz();
 
   const setsTotal = plan ? contarSeries(plan) : 0;
   let setsHechos = 0;
@@ -874,7 +916,7 @@ async function terminarEntrenamiento(abandonado) {
 
   pitido(1180, 0.18, 0.3);
   vibrar([70, 50, 90]);
-  hablar("Entrenamiento terminado");
+  hablar("Entrenamiento terminado", 280);
 
   const realSeg = Math.round((performance.now() - runner.iniciadoEn - runner.pausadoMs) / 1000);
   const ahora = Date.now();
@@ -1014,7 +1056,7 @@ function pintarAjustes() {
     '</div>';
 
   let html = '<div class="seccion-ajustes"><h2>Durante el entrenamiento</h2>';
-  html += filaToggle("voz", "Voz", "Dice abajo, arriba, aguanta y descanso");
+  html += filaToggle("voz", "Voz", "Dice abajo, arriba, aguanta, descanso y qué sigue");
   html += filaToggle("pitidos", "Pitidos", "Cuenta regresiva 3, 2, 1");
   html += filaToggle("vibracion", "Vibración", "Aviso al cambiar de movimiento");
   html += filaToggle("wakeLock", "Mantener pantalla encendida", "Evita que el teléfono se duerma");
@@ -1791,7 +1833,7 @@ document.addEventListener("click", async (ev) => {
       runner.voz = !runner.voz;
       estado.config.voz = runner.voz;
       $("#btn-voz").classList.toggle("mute", !runner.voz);
-      if (!runner.voz && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (!runner.voz) detenerVoz();
       await guardarConfig();
       aviso(runner.voz ? "Voz activada" : "Voz silenciada");
       break;

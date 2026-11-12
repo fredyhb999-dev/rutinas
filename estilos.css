@@ -406,9 +406,24 @@ img{display:block;max-width:100%}
 }
 .anillo-texto small{font-size:.72rem;letter-spacing:.22em;color:var(--tenue);text-transform:uppercase;margin-top:2px}
 
-.runner-info{display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;min-height:44px}
-.runner-info strong{font-size:1rem;font-weight:750;max-width:92vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.runner-info span{font-size:.78rem;color:var(--tenue);letter-spacing:.02em}
+.runner-info{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-height:44px;width:100%}
+.runner-info strong{
+  font-size:clamp(1.4rem, 6.9vw, 1.625rem);
+  font-weight:800;
+  line-height:1.12;
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:break-word;
+  text-wrap:balance;
+}
+.runner-info span{
+  font-size:clamp(.84rem, 4.15vw, .975rem);
+  line-height:1.25;
+  max-width:100%;
+  color:var(--tenue);
+  letter-spacing:.02em;
+  text-wrap:balance;
+}
 
 .runner[data-fase="descanso"] .anillo-valor{stroke:var(--cian);filter:drop-shadow(0 0 8px rgba(61,220,255,.4))}
 .runner[data-fase="descanso"] .fase-etiqueta{color:var(--cian)}
