@@ -702,6 +702,23 @@ img{display:block;max-width:100%}
 }
 .foto-caja input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .foto-caja img{width:100%;height:100%;object-fit:cover}
+.foto-item{position:relative}
+.foto-camara{
+  position:absolute;right:8px;top:8px;z-index:2;
+  width:38px;height:38px;border-radius:50%;
+  display:grid;place-items:center;
+  background:rgba(10,15,24,.78);
+  border:1px solid rgba(255,255,255,.22);
+  color:var(--texto);
+  cursor:pointer;
+}
+.foto-camara svg{width:19px;height:19px}
+.foto-camara:active{background:rgba(198,255,61,.22);color:var(--lima)}
+.foto-camara-input{
+  position:absolute;left:0;top:0;
+  width:1px;height:1px;opacity:0;
+  pointer-events:none;border:0;padding:0;
+}
 .foto-emoji{font-size:2rem}
 .foto-etiqueta{
   position:absolute;left:8px;bottom:8px;

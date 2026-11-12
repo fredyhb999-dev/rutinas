@@ -1132,15 +1132,23 @@ function htmlEditorEjercicio() {
   const urlI = urlBlob(ej.fotoInicial);
   const urlF = urlBlob(ej.fotoFinal);
 
+  const cajaFoto = (tipo, url, etiqueta) =>
+    '<div class="foto-item">' +
+    '<label class="foto-caja"><input type="file" accept="image/*" data-foto="' + tipo + '">' +
+    (url ? '<img src="' + url + '" alt="">' : '<span class="foto-emoji">' + esc(ej.emoji || "💪") + '</span>') +
+    '<span class="foto-etiqueta">' + etiqueta + '</span></label>' +
+    '<button type="button" class="foto-camara" data-accion="foto-camara" data-foto="' + tipo + '" aria-label="Tomar foto con la cámara" title="Tomar foto">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h3l1.5-2h7l1.5 2h3v10.5H4z"/><circle cx="12" cy="13.5" r="3.1"/></svg>' +
+    '</button>' +
+    '<input type="file" accept="image/*" capture="environment" class="foto-camara-input" data-foto="' + tipo + '" data-camara="1" tabindex="-1" aria-hidden="true">' +
+    '</div>';
+
   const fotos = esDesc ? "" :
     '<div class="fotos">' +
-    '<label class="foto-caja"><input type="file" accept="image/*" data-foto="inicial">' +
-    (urlI ? '<img src="' + urlI + '" alt="">' : '<span class="foto-emoji">' + esc(ej.emoji || "💪") + '</span>') +
-    '<span class="foto-etiqueta">Inicial</span></label>' +
-    '<label class="foto-caja"><input type="file" accept="image/*" data-foto="final">' +
-    (urlF ? '<img src="' + urlF + '" alt="">' : '<span class="foto-emoji">' + esc(ej.emoji || "💪") + '</span>') +
-    '<span class="foto-etiqueta">Final</span></label>' +
-    '</div>';
+    cajaFoto("inicial", urlI, "Inicial") +
+    cajaFoto("final", urlF, "Final") +
+    '</div>' +
+    '<p class="nota">Toca la foto para elegir de la galería, o el botón de cámara para tomar una nueva.</p>';
 
   const campos = esDesc
     ? filaEditor("Duración", "segundos", ej.segundos || 60, " s", 5, 900)
@@ -1810,6 +1818,12 @@ document.addEventListener("click", async (ev) => {
       ej.aguanteAbajoSeg = clamp(Number(ej.aguanteAbajoSeg) || 0, 0, Number(ej.bajadaSeg) || 0);
       ej.aguanteArribaSeg = clamp(Number(ej.aguanteArribaSeg) || 0, 0, Number(ej.subidaSeg) || 0);
       $("#hoja-cuerpo").innerHTML = htmlEditorEjercicio();
+      break;
+    }
+    case "foto-camara": {
+      const caja = el.closest(".foto-item");
+      const input = caja && caja.querySelector(".foto-camara-input");
+      if (input) input.click();
       break;
     }
     case "guardar-ejercicio": await guardarEjercicio(); break;
