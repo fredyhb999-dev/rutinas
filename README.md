@@ -4,13 +4,14 @@ App personal para seguir rutinas de ejercicio desde el celular: planes por día,
 tiempos guiados (bajada, aguante, subida), descansos, fotos de cada movimiento,
 voz en español, vibración e historial.
 
-Es una PWA sin frameworks ni compilación: se sirve tal cual desde GitHub Pages.
+Es una PWA sin frameworks ni compilación: se sirve tal cual desde GitHub Pages, con los archivos en la carpeta `docs/`.
 
 ## Usar en el Android
 
 1. Abrir `https://fredyhb999-dev.github.io/rutinas/` en Chrome.
 2. Menú (⋮) → **Instalar app** / **Añadir a pantalla de inicio**.
 3. Abrir desde el icono. Funciona sin internet una vez instalada.
+Nota: La app está en `docs/` y GitHub Pages la publica desde ahí.
 
 Durante el entrenamiento la app pide mantener la pantalla encendida y se pausa
 sola si sales o el teléfono se bloquea.
