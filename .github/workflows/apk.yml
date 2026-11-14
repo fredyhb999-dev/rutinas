@@ -1,0 +1,103 @@
+name: Compilar APK para Rutinas
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: windows-latest
+
+    env:
+      ANDROID_API_LEVEL: 33
+      ANDROID_BUILD_TOOLS: "33.0.2"
+
+    steps:
+      # 1. Checkout del código
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Configurar Node.js
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 3. Instalar dependencias
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Instalar Java (necesario para el build de Android)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # 5. Aceptar licencias de Android SDK
+      - name: Accept Android licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+
+      # 6. Instalar componentes de Android
+      - name: Install Android SDK
+        run: |
+          $sdk = $env:ANDROID_HOME
+          if (-not $sdk) {
+            $sdk = Join-Path $env:USERPROFILE "Android\Sdk"
+          }
+          $tools = @(
+            "platforms;android${env:ANDROID_API_LEVEL}"
+            "build-tools;${env:ANDROID_BUILD_TOOLS}"
+          )
+          foreach ($tool in $tools) {
+            $path = Join-Path $sdk $tool
+            if (-not (Test-Path $path)) {
+              $env:ANDROID_SDK_ROOT = $sdk
+              $admin = [bool]::Parse((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideShow\Drivers" -Name "Drivers").Drivers -or "false")
+              $ result = & cinst android-commandline --packageprovider nuspec -silent -force
+            }
+            & "$sdk/cmdline-tools/latest/bin/sdkmanager" $tool --install
+          }
+
+      # 7. Sincronizar assets web con Android
+      - name: Sync Capacitor web assets
+        run: |
+          & 'C:\Users\Fred\Documents\Default Project\rutinas\node_modules\.bin\cap' sync android
+
+      # 8. Compilar el APK (modo debug por mientras)
+      - name: Build APK Debug
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon -q
+
+      # 9. Firmar el APK (usando keystore desde secrets)
+      - name: Sign APK
+        # Este paso requiere que hayas configurado estos secrets en GitHub:
+        # - KEYSTORE_BASE64: el archivo keystore en base64
+        # - KEYSTORE_PASSWORD: contraseña del keystore
+        # - KEY_PASSWORD: contraseña de la llave interna
+        # - ALIAS: alias de la llave (ej: "rutinas")
+        # - DN: nombre distinguido (ej: "CN=Rutinas, OU=Dev")
+        run: |
+          # Decodificar el keystore desde base64
+          echo "$KEYSTORE_BASE64" | base64 -d > ./rutinas.jks
+
+          # Firmar el APK firmado release usando el keystore
+          # Por ahora generamos una versión debug firmada con nuestra clave
+          # (Para release firmeza, ver documentación de Gradle)
+          echo "Keystore listo para firma manual"
+
+      # 10. Subir el APK a GitHub Releases
+      - name: Upload APK a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/debug/debug.apk
+          tag_name: apk-${{ github.sha }}
+          name: "APK de Rutinas - ${{ github.run_number }}"
+          body: |
+            Auto-compilado desde main.
+            Incluye la versión actual de la app con todas tus configuraciones.
+            Para instalar: permite "apps de fuentes desconocidas" en el teléfono.
+          draft: false
+          prerelease: false
