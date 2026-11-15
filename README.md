@@ -35,10 +35,11 @@ Para recompilar el APK después de cambiar `docs/`:
 ```powershell
 npx cap sync android
 cd android
-.\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
 ```
 
-El APK queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
+El APK firmado queda en `android/app/build/outputs/apk/release/app-release.apk`.
+La llave de firma y sus cuidados están en `AGENTS.md`.
 
 ## Pantallas
 

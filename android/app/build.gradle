@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Firma de versión. La llave vive fuera del proyecto (C:/Users/Fred/Llaves/rutinas.jks)
+// y sus datos están en android/keystore.properties, que no se sube al repositorio.
+// Si ese archivo no existe (otra computadora, o GitHub Actions sin configurar), se
+// usa la firma de prueba para que la compilación no se rompa.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def hayLlave = keystorePropertiesFile.exists()
+if (hayLlave) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.rutinas.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +27,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hayLlave) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hayLlave) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
