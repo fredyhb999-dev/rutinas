@@ -16,6 +16,30 @@ Nota: La app está en `docs/` y GitHub Pages la publica desde ahí.
 Durante el entrenamiento la app pide mantener la pantalla encendida y se pausa
 sola si sales o el teléfono se bloquea.
 
+## APK (Capacitor)
+
+El proyecto también se empaqueta como APK con Capacitor. La carpeta `docs/` es a la
+vez la app web y lo que se copia al APK: se edita una sola vez.
+
+Dentro del APK la app no es Chrome, es un WebView, y le faltan cosas del navegador.
+Por eso se usan los plugins nativos, con la versión web como respaldo:
+
+| Función | En la PWA | En el APK |
+|---|---|---|
+| Vibración | `navigator.vibrate` | `@capacitor/haptics` |
+| Voz | `speechSynthesis` | `@capacitor-community/text-to-speech` |
+| Pantalla encendida | `wakeLock` | respaldo con audio silencioso |
+
+Para recompilar el APK después de cambiar `docs/`:
+
+```powershell
+npx cap sync android
+cd android
+.\gradlew.bat assembleDebug
+```
+
+El APK queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
+
 ## Pantallas
 
 - **Inicio**: plan de hoy, duración, racha, semana e historial reciente.

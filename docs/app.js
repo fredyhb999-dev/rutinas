@@ -80,8 +80,37 @@ function nombrePlan(id) {
   return p ? p.nombre : "Descanso";
 }
 
+/* ---------------- nativo (APK) y navegador (PWA) ----------------
+   El APK no es Chrome: por dentro es un WebView y le faltan la vibración y la voz
+   del navegador. Dentro del APK se usan los plugins de Capacitor (el vibrador y el
+   motor de voz del teléfono); en la PWA se sigue usando lo de siempre. Las dos
+   rutas conviven en el mismo archivo. */
+function pluginNativo(nombre) {
+  const c = window.Capacitor;
+  return (c && c.Plugins && c.Plugins[nombre]) || null;
+}
+
 function vibrar(patron) {
-  if (estado.config.vibracion && navigator.vibrate) {
+  if (!estado.config.vibracion) return;
+  // En el APK, navigator.vibrate no existe: se usa el vibrador del teléfono.
+  const haptics = pluginNativo("Haptics");
+  if (haptics) {
+    const pulsos = Array.isArray(patron) ? patron : [patron];
+    let espera = 0;
+    pulsos.forEach((ms, i) => {
+      const d = Math.max(1, Number(ms) || 0);
+      // Los pares vibran y los nones son la pausa, igual que navigator.vibrate.
+      if (i % 2 === 0) {
+        const cuando = espera;
+        setTimeout(() => {
+          try { haptics.vibrate({ duration: d }); } catch (e) {}
+        }, cuando);
+      }
+      espera += d;
+    });
+    return;
+  }
+  if (navigator.vibrate) {
     try { navigator.vibrate(patron); } catch (e) {}
   }
 }
@@ -422,10 +451,33 @@ if ("speechSynthesis" in window) {
   window.speechSynthesis.addEventListener("voiceschanged", cargarVoces);
 }
 
+/* En el APK la voz la pone el motor del teléfono. Si ese motor no tiene español
+   instalado, se avisa una vez, en vez de quedarse callado sin explicar por qué. */
+let vozLangNativa = "";
+let vozLangRevisada = false;
+async function prepararVozNativa() {
+  const tts = pluginNativo("TextToSpeech");
+  if (!tts || vozLangRevisada) return;
+  vozLangRevisada = true;
+  try {
+    const r = await tts.getSupportedLanguages();
+    const lista = (r && r.languages) || [];
+    vozLangNativa = lista.find(l => /^es[-_]ES/i.test(l)) || lista.find(l => /^es/i.test(l)) || "";
+    if (!vozLangNativa) {
+      aviso("El teléfono no tiene voz en español. Actívala en Ajustes → Idiomas → Texto a voz.");
+    }
+  } catch (e) {}
+}
+
 function detenerVoz() {
   if (runner.vozTimer) {
     clearTimeout(runner.vozTimer);
     runner.vozTimer = 0;
+  }
+  const tts = pluginNativo("TextToSpeech");
+  if (tts) {
+    try { tts.stop(); } catch (e) {}
+    return;
   }
   if ("speechSynthesis" in window) {
     try { window.speechSynthesis.cancel(); } catch (e) {}
@@ -433,12 +485,21 @@ function detenerVoz() {
 }
 
 function hablar(texto, retraso) {
-  if (!runner.voz || !estado.config.voz || !("speechSynthesis" in window)) return;
+  if (!runner.voz || !estado.config.voz) return;
+  const tts = pluginNativo("TextToSpeech");
+  if (!tts && !("speechSynthesis" in window)) return;
   detenerVoz();
   const espera = Math.max(0, retraso === undefined ? 170 : retraso);
   runner.vozTimer = setTimeout(() => {
     runner.vozTimer = 0;
     if (!runner.voz || !estado.config.voz) return;
+    if (tts) {
+      // En el APK no hay speechSynthesis: habla el motor de voz del teléfono.
+      try {
+        tts.speak({ text: texto, lang: vozLangNativa || "es-ES", rate: 1.18, pitch: 1, volume: 1 });
+      } catch (e) {}
+      return;
+    }
     try {
       const u = new SpeechSynthesisUtterance(texto);
       u.lang = "es-ES";
@@ -2157,8 +2218,22 @@ async function iniciarApp() {
   }
   pintarInicio();
   mostrar("inicio");
+  prepararVozNativa();
 
-  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+  // Dentro del APK los archivos ya vienen incluidos. Si quedara un service worker
+  // de una instalación anterior, serviría una versión vieja de app.js y parecería
+  // que los cambios no llegaron: por eso ahí se apaga y se limpia.
+  const enApk = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if (enApk) {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then(lista => lista.forEach(r => r.unregister()))
+        .catch(() => {});
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(claves => claves.forEach(c => caches.delete(c))).catch(() => {});
+    }
+  } else if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 }
