@@ -59,6 +59,16 @@ que se instala es el release**.
   esa app ya no se puede actualizar: habría que desinstalar y perder los datos.
   La contraseña no va en la documentación ni en el repositorio.
 
+## Iconos
+
+La imagen de origen es `docs/iconos/icono-512.png`; de ahí salen los iconos de la
+web y los del APK (`android/app/src/main/res/mipmap-*`). Los del APK son **tres
+variantes** por resolución: cuadrado, redondo y el adaptativo (fondo + frente
+recortable), porque Android 8 en adelante recorta el icono con una máscara.
+
+Si se cambia la imagen de origen, hay que regenerar los dos juegos y recompilar. El
+icono que se ve al abrir la app es aparte: es el *splash* (`res/drawable*/splash.png`).
+
 ## Caché (el error que más cuesta)
 
 El `sw.js` guarda los archivos para funcionar sin internet, y ese caché
