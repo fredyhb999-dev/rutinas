@@ -89,4 +89,5 @@ lo que hay en `docs/` sea lo mismo que quedó dentro del APK.
 
 ## Pendiente
 
-- **Flujo de GitHub Actions** (`apk.yml` está roto y no se usa todavía).
+- **Flujo de GitHub Actions**: hoy no hay workflow. El APK se compila en la
+  computadora con los comandos de arriba; la web se publica sola con el push.
