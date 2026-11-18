@@ -266,7 +266,7 @@ function pintarInicio() {
   $("#saludo-texto").textContent = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
   const hoy = claveHoy();
   const fecha = new Date();
-  $("#saludo-sub").textContent = DIAS_LARGOS[DIAS.indexOf(hoy)] + " " + fecha.getDate() + " · a entrenar";
+  $("#saludo-sub").textContent = DIAS_LARGOS[DIAS.indexOf(hoy)] + " " + fecha.getDate();
 
   const racha = calcularRacha();
   const chip = $("#chip-racha");
@@ -492,19 +492,42 @@ if ("speechSynthesis" in window) {
   window.speechSynthesis.addEventListener("voiceschanged", cargarVoces);
 }
 
-/* En el APK la voz la pone el motor del teléfono. Ese motor tarda en arrancar y
-   puede no tener español instalado. Por eso se reintenta la consulta y, si algo
-   falla, se avisa con un mensaje claro en vez de quedarse callado. */
+function elegirVozWeb() {
+  if (!voces.length) return null;
+  const buscar = (patron) => voces.find(v => patron.test(String(v.lang)));
+  return buscar(/^es[-_]MX/i) || buscar(/^es[-_]US/i) || buscar(/^en[-_]US/i) || null;
+}
+
+/* En el APK la voz la pone el motor del teléfono. Ese motor tarda en arrancar.
+   El orden de preferencia es: español de México, español de EE. UU., inglés de
+   EE. UU. y, si no hay ninguno, el idioma por defecto del teléfono. */
 let vozLangNativa = "";
 let vozRevisada = false;
 let vozIntentos = 0;
 let vozPromesa = null;
-let vozAvisada = false;
 let vozFallos = 0;
 let vozErrorAvisada = false;
 
 function esApk() {
   return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+
+function elegirIdiomaVoz(lista) {
+  const buscar = (patron) => lista.find(l => patron.test(String(l)));
+  const preferido = buscar(/^es[-_]MX/i) || buscar(/^es[-_]US/i) || buscar(/^en[-_]US/i);
+  if (preferido) return preferido;
+
+  // Si no está ninguno de los tres, se usa el idioma del teléfono si el motor
+  // lo tiene; si no, el primero que ofrezca.
+  const dispositivo = String(navigator.language || "").replace("_", "-");
+  if (dispositivo) {
+    const exacto = lista.find(l => String(l).toLowerCase() === dispositivo.toLowerCase());
+    if (exacto) return exacto;
+    const base = dispositivo.split("-")[0].toLowerCase();
+    const mismoIdioma = lista.find(l => String(l).split("-")[0].toLowerCase() === base);
+    if (mismoIdioma) return mismoIdioma;
+  }
+  return lista[0] || "";
 }
 
 function prepararVozNativa() {
@@ -527,12 +550,8 @@ function prepararVozNativa() {
       const r = await tts.getSupportedLanguages();
       const lista = (r && r.languages) || [];
       if (lista.length) {
-        vozLangNativa = lista.find(l => /^es[-_]ES/i.test(l)) || lista.find(l => /^es/i.test(l)) || "";
+        vozLangNativa = elegirIdiomaVoz(lista);
         vozRevisada = true;
-        if (!vozLangNativa && !vozAvisada) {
-          vozAvisada = true;
-          aviso("El teléfono no tiene voz en español. Actívala en Ajustes → Idiomas → Texto a voz.");
-        }
       }
     } catch (e) {
     } finally {
@@ -568,9 +587,7 @@ async function probarVoz() {
     vozIntentos = 0;
     await prepararVozNativa();
     if (!vozLangNativa) {
-      aviso(vozRevisada
-        ? "El teléfono no tiene voz en español. Actívala en Ajustes → Idiomas → Texto a voz."
-        : "El motor de voz del teléfono todavía no responde. Espera unos segundos y vuelve a probar.");
+      aviso("El motor de voz del teléfono todavía no responde. Espera unos segundos y vuelve a probar.");
       return;
     }
     try {
@@ -585,10 +602,9 @@ async function probarVoz() {
   if ("speechSynthesis" in window) {
     try {
       const u = new SpeechSynthesisUtterance(texto);
-      u.lang = "es-ES";
       u.rate = 1.1;
-      const v = voces.find(v => /^es[-_]ES/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
-      if (v) u.voice = v;
+      const v = elegirVozWeb();
+      if (v) { u.voice = v; u.lang = v.lang; }
       window.speechSynthesis.speak(u);
       aviso("Voz de prueba. Si no la oyes, sube el volumen.");
     } catch (e) {
@@ -649,11 +665,10 @@ function hablar(texto, retraso) {
     }
     try {
       const u = new SpeechSynthesisUtterance(texto);
-      u.lang = "es-ES";
       u.rate = 1.18;
       u.pitch = 1;
-      const v = voces.find(v => /^es[-_]ES/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
-      if (v) u.voice = v;
+      const v = elegirVozWeb();
+      if (v) { u.voice = v; u.lang = v.lang; }
       window.speechSynthesis.speak(u);
     } catch (e) {}
   }, espera);

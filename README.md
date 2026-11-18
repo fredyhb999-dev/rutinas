@@ -96,5 +96,7 @@ esta carpeta (no lo subas al repo). Para restaurar: **Importar respaldo**.
 
 - Pantalla encendida: Screen Wake Lock API (requiere HTTPS; GitHub Pages lo da).
   Si el navegador no la soporta, se usa audio silencioso como respaldo.
+- La voz prefiere español de México, luego español de EE. UU., luego inglés de
+  EE. UU.; si no hay ninguno, usa la voz por defecto del teléfono.
 - El cronómetro se basa en `performance.now()` y se pausa al ocultar la app.
 - Los tiempos son orientativos: no sustituyen supervisión profesional.
