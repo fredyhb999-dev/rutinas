@@ -585,6 +585,42 @@ function etiquetaVozMostrada(v, i) {
   return "Voz " + (i + 1);
 }
 
+function banderaIdioma(tag) {
+  const t = String(tag || "").toLowerCase();
+  const mapa = {
+    "es-mx": "🇲🇽", "es-us": "🇺🇸", "es-es": "🇪🇸", "es-419": "🌎",
+    "en-us": "🇺🇸", "en-gb": "🇬🇧", "en-au": "🇦🇺", "en-ca": "🇨🇦", "en-in": "🇮🇳"
+  };
+  if (mapa[t]) return mapa[t];
+  if (t.startsWith("es")) return "🌎";
+  if (t.startsWith("en")) return "🌐";
+  return "🌐";
+}
+
+function idiomaEfectivoSelector() {
+  const cfg = estado.config;
+  if (cfg.vozURI) {
+    const v = vocesDisponibles().find(v => v.voiceURI === cfg.vozURI);
+    if (v && v.lang) return v.lang;
+    return cfg.vozLang || "";
+  }
+  if (cfg.vozIdioma && cfg.vozIdioma !== "auto") return cfg.vozIdioma;
+  if (esApk()) return vozLangNativa || "";
+  const v = elegirVozWeb();
+  return (v && v.lang) || "";
+}
+
+function etiquetaAutoActual() {
+  let lang = "";
+  if (esApk()) {
+    lang = vozLangNativa;
+  } else {
+    const v = elegirVozWeb();
+    lang = v ? v.lang : "";
+  }
+  return lang ? "Ahora: " + nombreIdioma(lang) : "Se elige la mejor voz disponible";
+}
+
 function preferenciaIdioma(tag) {
   const t = String(tag || "").toLowerCase();
   const i = ORDEN_IDIOMAS.findIndex(x => x.toLowerCase() === t);
@@ -780,34 +816,41 @@ function avisarVozError() {
   aviso("No se pudo usar la voz del teléfono. Revisa Ajustes → Texto a voz.");
 }
 
-async function probarVozCon(uri, lang, nombre) {
+async function probarVozCon(uri, lang, nombre, boton) {
   const texto = textosVoz(lang).prueba;
   const tts = pluginNativo("TextToSpeech");
   detenerVoz();
+  $$(".voz-play.reproduciendo").forEach(b => b.classList.remove("reproduciendo"));
+  if (boton) boton.classList.add("reproduciendo");
 
-  if (tts) {
-    const idx = vozListaNativa.findIndex(v => v.voiceURI === uri);
-    if (idx < 0) { aviso("Esa voz ya no está en el teléfono"); return; }
-    try {
+  try {
+    if (tts) {
+      const idx = vozListaNativa.findIndex(v => v.voiceURI === uri);
+      if (idx < 0) { aviso("Esa voz ya no está en el teléfono"); return; }
       await tts.speak({ text: texto, lang: lang, rate: 1.1, pitch: 1, volume: 1, voice: idx });
       aviso("Voz de prueba: " + (nombre || "voz"));
-    } catch (e) {
-      aviso("No se pudo usar esa voz");
+      return;
     }
-    return;
-  }
 
-  const v = voces.find(v => v.voiceURI === uri);
-  if (!v) { aviso("Esa voz ya no está en el navegador"); return; }
-  try {
+    const v = voces.find(v => v.voiceURI === uri);
+    if (!v) { aviso("Esa voz ya no está en el navegador"); return; }
     const u = new SpeechSynthesisUtterance(texto);
     u.voice = v;
     u.lang = v.lang;
     u.rate = 1.1;
-    window.speechSynthesis.speak(u);
+    await new Promise(res => {
+      let timer = 0;
+      const fin = () => { clearTimeout(timer); res(); };
+      u.onend = fin;
+      u.onerror = fin;
+      timer = setTimeout(fin, 6000);
+      window.speechSynthesis.speak(u);
+    });
     aviso("Voz de prueba: " + (nombre || "voz"));
   } catch (e) {
     aviso("No se pudo usar esa voz");
+  } finally {
+    if (boton) boton.classList.remove("reproduciendo");
   }
 }
 
@@ -1538,11 +1581,15 @@ function htmlSelectorVoz() {
   });
 
   let html = '<div class="editor">';
-  html += '<div class="fila-ajuste fila-voz">' +
-    '<button type="button" class="fila-texto" data-accion="voz-auto">' +
-    '<strong>Automático</strong><small>México → EE. UU. → inglés → predeterminado</small></button>' +
-    (auto ? '<span class="fila-flecha">✓</span>' : '') +
-    '</div>';
+  html += '<button type="button" class="voz-auto-card' + (auto ? " activa" : "") + '" data-accion="voz-auto">' +
+    '<span class="voz-auto-icono">✨</span>' +
+    '<span class="voz-auto-texto">' +
+    '<strong>Automático</strong>' +
+    '<small>México → EE. UU. → inglés</small>' +
+    '<em>' + esc(etiquetaAutoActual()) + '</em>' +
+    '</span>' +
+    (auto ? '<span class="voz-check">✓</span>' : '') +
+    '</button>';
 
   if (!filtradas.length) {
     html += '<p class="nota">No se pudieron leer las voces de este teléfono. Puedes seguir usando Automático.</p>';
@@ -1560,31 +1607,50 @@ function htmlSelectorVoz() {
   const idiomas = Object.keys(grupos).sort((a, b) =>
     preferenciaIdioma(a) - preferenciaIdioma(b) || a.localeCompare(b)
   );
+  const efectivo = idiomaEfectivoSelector() || idiomas[0];
+  const langActivo = idiomas.find(l => String(l).toLowerCase() === String(efectivo).toLowerCase()) || idiomas[0];
 
-  html += '<p class="nota">Solo aparecen las voces instaladas en este teléfono. Toca “Probar” para oír una.</p>';
-
+  html += '<div class="voz-chips">';
   idiomas.forEach(lang => {
-    const vocesIdioma = grupos[lang];
-    const selIdioma = !cfg.vozURI && cfg.vozIdioma === lang;
-    html += '<div class="voz-grupo">' + esc(nombreIdioma(lang)) + '</div>';
-    html += '<div class="fila-ajuste fila-voz">' +
-      '<button type="button" class="fila-texto" data-accion="voz-idioma" data-lang="' + esc(lang) + '">' +
-      '<strong>Usar una voz de este idioma</strong><small>La que elija el teléfono</small></button>' +
-      (selIdioma ? '<span class="fila-flecha">✓</span>' : '') +
-      '</div>';
+    const sel = !auto && String(efectivo).toLowerCase() === lang.toLowerCase();
+    html += '<button type="button" class="voz-chip' + (sel ? " activa" : "") + '" data-accion="voz-idioma" data-lang="' + esc(lang) + '">' +
+      '<span class="voz-chip-bandera">' + banderaIdioma(lang) + '</span>' +
+      '<span>' + esc(nombreIdioma(lang)) + '</span>' +
+      '</button>';
+  });
+  html += '</div>';
+
+  const vocesIdioma = grupos[langActivo] || [];
+  html += '<div class="voz-cab"><span>Voces de ' + esc(nombreIdioma(langActivo)) + '</span>' +
+    '<small>' + vocesIdioma.length + ' ' + (vocesIdioma.length === 1 ? "voz" : "voces") + '</small></div>';
+
+  if (!vocesIdioma.length) {
+    html += '<p class="nota">Este idioma no tiene voces instaladas en el teléfono.</p>';
+  } else {
+    html += '<div class="voz-lista">';
     vocesIdioma.forEach((v, i) => {
       const nombre = etiquetaVozMostrada(v, i);
       const sel = cfg.vozURI === v.voiceURI;
-      html += '<div class="fila-ajuste fila-voz">' +
-        '<button type="button" class="fila-texto" data-accion="voz-elegir" data-uri="' + esc(v.voiceURI) + '" data-lang="' + esc(lang) + '" data-nombre="' + esc(nombre) + '">' +
-        '<strong>' + esc(nombre) + '</strong><small>' + (v.localService ? "Local" : "Por internet") + '</small></button>' +
-        '<button type="button" class="btn-texto" data-accion="voz-probar" data-uri="' + esc(v.voiceURI) + '" data-lang="' + esc(lang) + '" data-nombre="' + esc(nombre) + '">Probar</button>' +
-        (sel ? '<span class="fila-flecha">✓</span>' : '') +
+      html += '<div class="voz-card' + (sel ? " activa" : "") + '">' +
+        '<button type="button" class="voz-play" data-accion="voz-probar" data-uri="' + esc(v.voiceURI) + '" data-lang="' + esc(langActivo) + '" data-nombre="' + esc(nombre) + '" aria-label="Probar esta voz" title="Probar">' +
+        '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>' +
+        '</button>' +
+        '<button type="button" class="voz-info" data-accion="voz-elegir" data-uri="' + esc(v.voiceURI) + '" data-lang="' + esc(langActivo) + '" data-nombre="' + esc(nombre) + '">' +
+        '<strong>' + esc(nombre) + '</strong><small>' + (v.localService ? "Local" : "Por internet") + '</small>' +
+        '</button>' +
+        (sel ? '<span class="voz-check">✓</span>' : '') +
         '</div>';
     });
-  });
+    const selDefault = !auto && !cfg.vozURI && cfg.vozIdioma === langActivo;
+    html += '<button type="button" class="voz-default' + (selDefault ? " activa" : "") + '" data-accion="voz-idioma" data-lang="' + esc(langActivo) + '">' +
+      '<span class="voz-default-icono">⚙</span>' +
+      '<span class="voz-info"><strong>La que elija el teléfono</strong><small>Voz predeterminada de este idioma</small></span>' +
+      (selDefault ? '<span class="voz-check">✓</span>' : '') +
+      '</button>';
+    html += '</div>';
+  }
 
-  html += '<p class="nota">La voz se usa cuando la app habla durante el entrenamiento.</p>';
+  html += '<p class="nota">Solo aparecen las voces instaladas en este teléfono. Toca ▶ para oír una.</p>';
   if (esApk()) html += '<button type="button" class="btn btn-secundario btn-grande" data-accion="voz-instalar">Instalar más voces</button>';
   html += '</div>';
   return html;
@@ -2717,7 +2783,7 @@ document.addEventListener("click", async (ev) => {
       });
       break;
     }
-    case "voz-probar": await probarVozCon(el.dataset.uri, el.dataset.lang, el.dataset.nombre); break;
+    case "voz-probar": await probarVozCon(el.dataset.uri, el.dataset.lang, el.dataset.nombre, el); break;
     case "voz-instalar": {
       const tts = pluginNativo("TextToSpeech");
       if (tts && tts.openInstall) {
