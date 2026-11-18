@@ -11,6 +11,10 @@ const DIAS_SEMANA = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabad
 const CONFIG_DEFECTO = {
   clave: CLAVE_CONFIG,
   voz: true,
+  vozIdioma: "auto",
+  vozURI: "",
+  vozLang: "",
+  vozEtiqueta: "Automático",
   pitidos: true,
   vibracion: true,
   prepSeg: 3,

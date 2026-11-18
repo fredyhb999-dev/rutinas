@@ -486,30 +486,130 @@ let voces = [];
 function cargarVoces() {
   if (!("speechSynthesis" in window)) return;
   voces = window.speechSynthesis.getVoices() || [];
+  if (estado.hojaTipo === "selector-voz") {
+    const cuerpo = $("#hoja-cuerpo");
+    if (cuerpo) cuerpo.innerHTML = htmlSelectorVoz();
+  }
 }
 if ("speechSynthesis" in window) {
   cargarVoces();
   window.speechSynthesis.addEventListener("voiceschanged", cargarVoces);
 }
 
-function elegirVozWeb() {
-  if (!voces.length) return null;
-  const buscar = (patron) => voces.find(v => patron.test(String(v.lang)));
-  return buscar(/^es[-_]MX/i) || buscar(/^es[-_]US/i) || buscar(/^en[-_]US/i) || null;
-}
+const TEXTOS_VOZ = {
+  es: {
+    preparate: "Prepárate",
+    descanso: "Descanso",
+    descansoSigue: "Descanso. Sigue ",
+    aguanta: "Aguanta",
+    terminado: "Entrenamiento terminado",
+    prueba: "La voz funciona",
+    abajo: "abajo",
+    arriba: "arriba",
+    atras: "atrás",
+    adelante: "adelante",
+    izquierda: "izquierda",
+    derecha: "derecha"
+  },
+  en: {
+    preparate: "Get ready",
+    descanso: "Rest",
+    descansoSigue: "Rest. Next: ",
+    aguanta: "Hold",
+    terminado: "Workout complete",
+    prueba: "The voice works",
+    abajo: "down",
+    arriba: "up",
+    atras: "back",
+    adelante: "forward",
+    izquierda: "left",
+    derecha: "right"
+  }
+};
+
+const MAPA_MOVIMIENTOS = {
+  "abajo": "abajo",
+  "bajar": "abajo",
+  "baja": "abajo",
+  "arriba": "arriba",
+  "subir": "arriba",
+  "sube": "arriba",
+  "atrás": "atras",
+  "atras": "atras",
+  "adelante": "adelante",
+  "izquierda": "izquierda",
+  "derecha": "derecha"
+};
+
+const ORDEN_IDIOMAS = ["es-MX", "es-US", "es-ES", "en-US", "en-GB"];
 
 /* En el APK la voz la pone el motor del teléfono. Ese motor tarda en arrancar.
-   El orden de preferencia es: español de México, español de EE. UU., inglés de
+   El orden automático es: español de México, español de EE. UU., inglés de
    EE. UU. y, si no hay ninguno, el idioma por defecto del teléfono. */
 let vozLangNativa = "";
+let vozIndiceNativa = -1;
+let vozLangListaNativa = [];
+let vozListaNativa = [];
 let vozRevisada = false;
 let vozIntentos = 0;
 let vozPromesa = null;
 let vozFallos = 0;
 let vozErrorAvisada = false;
+let vozAvisoSeleccion = false;
 
 function esApk() {
   return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+
+function nombreIdioma(tag) {
+  const t = String(tag || "");
+  const fijos = {
+    "es-MX": "Español (México)",
+    "es-US": "Español (EE. UU.)",
+    "es-ES": "Español (España)",
+    "es-419": "Español (Latinoamérica)",
+    "en-US": "Inglés (EE. UU.)",
+    "en-GB": "Inglés (Reino Unido)"
+  };
+  const clave = Object.keys(fijos).find(k => k.toLowerCase() === t.toLowerCase());
+  if (clave) return fijos[clave];
+  try {
+    const n = new Intl.DisplayNames(["es"], { type: "language" }).of(t);
+    if (n) return n.charAt(0).toUpperCase() + n.slice(1);
+  } catch (e) {}
+  return t;
+}
+
+function etiquetaVozMostrada(v, i) {
+  if (!esApk()) return (v && v.name) || ("Voz " + (i + 1));
+  return "Voz " + (i + 1);
+}
+
+function preferenciaIdioma(tag) {
+  const t = String(tag || "").toLowerCase();
+  const i = ORDEN_IDIOMAS.findIndex(x => x.toLowerCase() === t);
+  if (i >= 0) return i;
+  if (t.startsWith("es")) return 10;
+  if (t.startsWith("en")) return 20;
+  return 30;
+}
+
+function vocesDisponibles() {
+  return esApk() ? vozListaNativa : voces;
+}
+
+function idiomaEsIngles(lang) {
+  return /^en([-_]|$)/i.test(String(lang || ""));
+}
+
+function textosVoz(lang) {
+  return idiomaEsIngles(lang) ? TEXTOS_VOZ.en : TEXTOS_VOZ.es;
+}
+
+function elegirVozWeb() {
+  if (!voces.length) return null;
+  const buscar = (patron) => voces.find(v => patron.test(String(v.lang)));
+  return buscar(/^es[-_]MX/i) || buscar(/^es[-_]US/i) || buscar(/^en[-_]US/i) || null;
 }
 
 function elegirIdiomaVoz(lista) {
@@ -530,6 +630,70 @@ function elegirIdiomaVoz(lista) {
   return lista[0] || "";
 }
 
+function resolverVozNativa(lenguas) {
+  const cfg = estado.config;
+  let falto = false;
+
+  if (cfg.vozURI) {
+    const i = vozListaNativa.findIndex(v => v.voiceURI === cfg.vozURI);
+    if (i >= 0) {
+      vozLangNativa = vozListaNativa[i].lang || cfg.vozLang || "";
+      vozIndiceNativa = i;
+      return;
+    }
+    falto = true;
+  }
+
+  if (cfg.vozIdioma && cfg.vozIdioma !== "auto") {
+    const tag = String(cfg.vozIdioma);
+    const encontrado = lenguas.find(l => String(l).toLowerCase() === tag.toLowerCase());
+    if (encontrado) {
+      vozLangNativa = encontrado;
+      vozIndiceNativa = -1;
+      if (falto) avisarSeleccionPerdida();
+      return;
+    }
+    falto = true;
+  }
+
+  vozLangNativa = elegirIdiomaVoz(lenguas);
+  vozIndiceNativa = -1;
+  if (falto) avisarSeleccionPerdida();
+}
+
+function avisarSeleccionPerdida() {
+  if (vozAvisoSeleccion) return;
+  vozAvisoSeleccion = true;
+  aviso("La voz elegida ya no está disponible. Se usa otra.");
+}
+
+function resolverVozWeb() {
+  if (!voces.length) return null;
+  const cfg = estado.config;
+  let falto = false;
+
+  if (cfg.vozURI) {
+    const v = voces.find(v => v.voiceURI === cfg.vozURI);
+    if (v) return v;
+    falto = true;
+  }
+
+  if (cfg.vozIdioma && cfg.vozIdioma !== "auto") {
+    const tag = String(cfg.vozIdioma).toLowerCase();
+    const v = voces.find(v => String(v.lang).toLowerCase() === tag)
+      || voces.find(v => String(v.lang).toLowerCase().startsWith(tag + "-"))
+      || voces.find(v => String(v.lang).toLowerCase().startsWith(tag.slice(0, 2) + "-"));
+    if (v) {
+      if (falto) avisarSeleccionPerdida();
+      return v;
+    }
+    falto = true;
+  }
+
+  if (falto) avisarSeleccionPerdida();
+  return elegirVozWeb();
+}
+
 function prepararVozNativa() {
   if (!esApk()) return Promise.resolve();
   const tts = pluginNativo("TextToSpeech");
@@ -547,10 +711,16 @@ function prepararVozNativa() {
 
   vozPromesa = (async () => {
     try {
-      const r = await tts.getSupportedLanguages();
-      const lista = (r && r.languages) || [];
+      const necesitaVoces = !!estado.config.vozURI;
+      const pVoces = necesitaVoces && tts.getSupportedVoices
+        ? Promise.resolve().then(() => tts.getSupportedVoices()).catch(() => null)
+        : Promise.resolve(null);
+      const [rLang, rVoces] = await Promise.all([tts.getSupportedLanguages(), pVoces]);
+      const lista = (rLang && rLang.languages) || [];
       if (lista.length) {
-        vozLangNativa = elegirIdiomaVoz(lista);
+        vozLangListaNativa = lista;
+        if (rVoces) vozListaNativa = (rVoces.voices) || [];
+        resolverVozNativa(lista);
         vozRevisada = true;
       }
     } catch (e) {
@@ -569,29 +739,99 @@ function prepararVozNativa() {
   return vozPromesa;
 }
 
+async function aplicarSeleccionVoz() {
+  vozAvisoSeleccion = false;
+  if (!esApk()) return;
+  vozRevisada = false;
+  vozLangNativa = "";
+  vozIndiceNativa = -1;
+  vozIntentos = 0;
+  await prepararVozNativa();
+}
+
+function idiomaVozActual() {
+  if (esApk()) return vozLangNativa || String(navigator.language || "");
+  const v = resolverVozWeb();
+  return (v && v.lang) || String(navigator.language || "");
+}
+
+function fraseVoz(clave, extra) {
+  const t = textosVoz(idiomaVozActual());
+  if (clave === "descansoSigue") return t.descansoSigue + (extra || "");
+  return t[clave] || "";
+}
+
+function fraseMovimiento(ej, tipo) {
+  const etiqueta = etiquetaFase(ej, tipo);
+  const clave = MAPA_MOVIMIENTOS[etiqueta.toLowerCase()];
+  return clave ? textosVoz(idiomaVozActual())[clave] : etiqueta.toLowerCase();
+}
+
+function etiquetaVozActual() {
+  const c = estado.config;
+  if (c.vozURI) return c.vozEtiqueta || "Voz elegida";
+  if (c.vozIdioma && c.vozIdioma !== "auto") return nombreIdioma(c.vozIdioma);
+  return "Automático (México → EE. UU. → inglés)";
+}
+
 function avisarVozError() {
   if (vozErrorAvisada) return;
   vozErrorAvisada = true;
   aviso("No se pudo usar la voz del teléfono. Revisa Ajustes → Texto a voz.");
 }
 
+async function probarVozCon(uri, lang, nombre) {
+  const texto = textosVoz(lang).prueba;
+  const tts = pluginNativo("TextToSpeech");
+  detenerVoz();
+
+  if (tts) {
+    const idx = vozListaNativa.findIndex(v => v.voiceURI === uri);
+    if (idx < 0) { aviso("Esa voz ya no está en el teléfono"); return; }
+    try {
+      await tts.speak({ text: texto, lang: lang, rate: 1.1, pitch: 1, volume: 1, voice: idx });
+      aviso("Voz de prueba: " + (nombre || "voz"));
+    } catch (e) {
+      aviso("No se pudo usar esa voz");
+    }
+    return;
+  }
+
+  const v = voces.find(v => v.voiceURI === uri);
+  if (!v) { aviso("Esa voz ya no está en el navegador"); return; }
+  try {
+    const u = new SpeechSynthesisUtterance(texto);
+    u.voice = v;
+    u.lang = v.lang;
+    u.rate = 1.1;
+    window.speechSynthesis.speak(u);
+    aviso("Voz de prueba: " + (nombre || "voz"));
+  } catch (e) {
+    aviso("No se pudo usar esa voz");
+  }
+}
+
 async function probarVoz() {
   const tts = pluginNativo("TextToSpeech");
-  const texto = "La voz funciona";
+  vozAvisoSeleccion = false;
   detenerVoz();
 
   if (tts) {
     // El botón sirve también para volver a revisar después de instalar la voz.
     vozRevisada = false;
     vozLangNativa = "";
+    vozIndiceNativa = -1;
     vozIntentos = 0;
     await prepararVozNativa();
     if (!vozLangNativa) {
       aviso("El motor de voz del teléfono todavía no responde. Espera unos segundos y vuelve a probar.");
       return;
     }
+    const texto = textosVoz(vozLangNativa).prueba;
+    const opciones = { text: texto, lang: vozLangNativa, rate: 1.1, pitch: 1, volume: 1 };
+    if (vozIndiceNativa >= 0) opciones.voice = vozIndiceNativa;
     try {
-      await tts.speak({ text: texto, lang: vozLangNativa, rate: 1.1, pitch: 1, volume: 1 });
+      await tts.speak(opciones);
       aviso("Voz de prueba: " + vozLangNativa + ". Si no la oyes, sube el volumen.");
     } catch (e) {
       aviso("No se pudo usar la voz del teléfono. Revisa Ajustes → Texto a voz.");
@@ -601,9 +841,10 @@ async function probarVoz() {
 
   if ("speechSynthesis" in window) {
     try {
+      const v = resolverVozWeb();
+      const texto = textosVoz(v ? v.lang : navigator.language).prueba;
       const u = new SpeechSynthesisUtterance(texto);
       u.rate = 1.1;
-      const v = elegirVozWeb();
       if (v) { u.voice = v; u.lang = v.lang; }
       window.speechSynthesis.speak(u);
       aviso("Voz de prueba. Si no la oyes, sube el volumen.");
@@ -644,18 +885,16 @@ function hablar(texto, retraso) {
     runner.vozTimer = 0;
     if (!runner.voz || !estado.config.voz) return;
     if (tts) {
-      // En el APK habla el motor de voz del teléfono. Antes hay que saber qué
-      // idioma español soporta; si el motor aún no arrancó, se espera aquí.
+      // En el APK habla el motor de voz del teléfono. La frase se arma aquí,
+      // después de saber qué idioma y qué voz se van a usar.
       if (!vozLangNativa && !vozRevisada) await prepararVozNativa();
       if (!vozLangNativa) return;
+      const mensaje = typeof texto === "function" ? texto() : texto;
+      if (!mensaje) return;
       try {
-        await tts.speak({
-          text: texto,
-          lang: vozLangNativa,
-          rate: 1.18,
-          pitch: 1,
-          volume: 1
-        });
+        const opciones = { text: mensaje, lang: vozLangNativa, rate: 1.18, pitch: 1, volume: 1 };
+        if (vozIndiceNativa >= 0) opciones.voice = vozIndiceNativa;
+        await tts.speak(opciones);
         vozFallos = 0;
       } catch (e) {
         vozFallos++;
@@ -663,11 +902,13 @@ function hablar(texto, retraso) {
       }
       return;
     }
+    const mensaje = typeof texto === "function" ? texto() : texto;
+    if (!mensaje) return;
     try {
-      const u = new SpeechSynthesisUtterance(texto);
+      const u = new SpeechSynthesisUtterance(mensaje);
       u.rate = 1.18;
       u.pitch = 1;
-      const v = elegirVozWeb();
+      const v = resolverVozWeb();
       if (v) { u.voice = v; u.lang = v.lang; }
       window.speechSynthesis.speak(u);
     } catch (e) {}
@@ -850,15 +1091,15 @@ function empezarPaso() {
   pintarPaso(paso);
 
   if (paso.tipo === "prep") {
-    hablar("Prepárate");
+    hablar(() => fraseVoz("preparate"));
   } else if (paso.tipo === "descanso") {
     const sig = siguienteEjercicioDesde(runner.idx);
-    if (sig && paso.dur >= 8) hablar("Descanso. Sigue " + sig.ej.nombre);
-    else hablar("Descanso");
+    if (sig && paso.dur >= 8) hablar(() => fraseVoz("descansoSigue", sig.ej.nombre));
+    else hablar(() => fraseVoz("descanso"));
   } else if (paso.tipo === "abajo") {
-    hablar(etiquetaFase(paso.ej, "abajo").toLowerCase());
+    hablar(() => fraseMovimiento(paso.ej, "abajo"));
   } else {
-    hablar(etiquetaFase(paso.ej, "arriba").toLowerCase());
+    hablar(() => fraseMovimiento(paso.ej, "arriba"));
   }
   guardarSnapshot();
 }
@@ -954,7 +1195,7 @@ function bucle() {
   if (paso.aguante > 0 && !runner.avisoAguante && restante <= paso.aguante * 1000 + 30) {
     runner.avisoAguante = true;
     pitido(1020, 0.1, 0.28);
-    hablar("Aguanta");
+    hablar(() => fraseVoz("aguanta"));
     vibrar(20);
   }
 
@@ -1160,7 +1401,7 @@ async function terminarEntrenamiento(abandonado) {
 
   pitido(1180, 0.18, 0.3);
   vibrar([70, 50, 90]);
-  hablar("Entrenamiento terminado", 280);
+  hablar(() => fraseVoz("terminado"), 280);
 
   const realSeg = Math.round((performance.now() - runner.iniciadoEn - runner.pausadoMs) / 1000);
   const ahora = Date.now();
@@ -1285,6 +1526,100 @@ function pintarPlanes() {
   cont.innerHTML = html;
 }
 
+/* ---------------- selector de idioma y voz ---------------- */
+
+function htmlSelectorVoz() {
+  const cfg = estado.config;
+  const auto = (cfg.vozIdioma === "auto" || !cfg.vozIdioma) && !cfg.vozURI;
+  const lista = vocesDisponibles();
+  const filtradas = lista.filter(v => {
+    const lang = String((v && v.lang) || "");
+    return v && v.voiceURI && (/^es([-_]|$)/i.test(lang) || /^en([-_]|$)/i.test(lang));
+  });
+
+  let html = '<div class="editor">';
+  html += '<div class="fila-ajuste fila-voz">' +
+    '<button type="button" class="fila-texto" data-accion="voz-auto">' +
+    '<strong>Automático</strong><small>México → EE. UU. → inglés → predeterminado</small></button>' +
+    (auto ? '<span class="fila-flecha">✓</span>' : '') +
+    '</div>';
+
+  if (!filtradas.length) {
+    html += '<p class="nota">No se pudieron leer las voces de este teléfono. Puedes seguir usando Automático.</p>';
+    html += '<button type="button" class="btn btn-secundario btn-grande" data-accion="voz-recargar">Reintentar</button>';
+    if (esApk()) html += '<button type="button" class="btn btn-secundario btn-grande" data-accion="voz-instalar">Instalar más voces</button>';
+    html += '</div>';
+    return html;
+  }
+
+  const grupos = {};
+  filtradas.forEach(v => {
+    const lang = String(v.lang || "");
+    (grupos[lang] = grupos[lang] || []).push(v);
+  });
+  const idiomas = Object.keys(grupos).sort((a, b) =>
+    preferenciaIdioma(a) - preferenciaIdioma(b) || a.localeCompare(b)
+  );
+
+  html += '<p class="nota">Solo aparecen las voces instaladas en este teléfono. Toca “Probar” para oír una.</p>';
+
+  idiomas.forEach(lang => {
+    const vocesIdioma = grupos[lang];
+    const selIdioma = !cfg.vozURI && cfg.vozIdioma === lang;
+    html += '<div class="voz-grupo">' + esc(nombreIdioma(lang)) + '</div>';
+    html += '<div class="fila-ajuste fila-voz">' +
+      '<button type="button" class="fila-texto" data-accion="voz-idioma" data-lang="' + esc(lang) + '">' +
+      '<strong>Usar una voz de este idioma</strong><small>La que elija el teléfono</small></button>' +
+      (selIdioma ? '<span class="fila-flecha">✓</span>' : '') +
+      '</div>';
+    vocesIdioma.forEach((v, i) => {
+      const nombre = etiquetaVozMostrada(v, i);
+      const sel = cfg.vozURI === v.voiceURI;
+      html += '<div class="fila-ajuste fila-voz">' +
+        '<button type="button" class="fila-texto" data-accion="voz-elegir" data-uri="' + esc(v.voiceURI) + '" data-lang="' + esc(lang) + '" data-nombre="' + esc(nombre) + '">' +
+        '<strong>' + esc(nombre) + '</strong><small>' + (v.localService ? "Local" : "Por internet") + '</small></button>' +
+        '<button type="button" class="btn-texto" data-accion="voz-probar" data-uri="' + esc(v.voiceURI) + '" data-lang="' + esc(lang) + '" data-nombre="' + esc(nombre) + '">Probar</button>' +
+        (sel ? '<span class="fila-flecha">✓</span>' : '') +
+        '</div>';
+    });
+  });
+
+  html += '<p class="nota">La voz se usa cuando la app habla durante el entrenamiento.</p>';
+  if (esApk()) html += '<button type="button" class="btn btn-secundario btn-grande" data-accion="voz-instalar">Instalar más voces</button>';
+  html += '</div>';
+  return html;
+}
+
+async function cargarVocesSelector() {
+  if (esApk()) {
+    const tts = pluginNativo("TextToSpeech");
+    if (tts && tts.getSupportedVoices) {
+      try {
+        const r = await tts.getSupportedVoices();
+        vozListaNativa = (r && r.voices) || [];
+      } catch (e) {}
+    }
+    return;
+  }
+  cargarVoces();
+}
+
+async function abrirSelectorVoz() {
+  estado.hojaTipo = "selector-voz";
+  abrirHoja("Idioma y voz", '<p class="nota">Cargando voces…</p>', true);
+  await cargarVocesSelector();
+  if (estado.hojaTipo !== "selector-voz") return;
+  $("#hoja-cuerpo").innerHTML = htmlSelectorVoz();
+}
+
+async function guardarSeleccionVoz(cambios) {
+  Object.assign(estado.config, cambios);
+  await guardarConfig();
+  await aplicarSeleccionVoz();
+  if (estado.hojaTipo === "selector-voz") $("#hoja-cuerpo").innerHTML = htmlSelectorVoz();
+  pintarAjustes();
+}
+
 function pintarAjustes() {
   const c = estado.config;
   const cont = $("#panel-ajustes");
@@ -1301,6 +1636,9 @@ function pintarAjustes() {
 
   let html = '<div class="seccion-ajustes"><h2>Durante el entrenamiento</h2>';
   html += filaToggle("voz", "Voz", "Dice abajo, arriba, aguanta, descanso y qué sigue");
+  html += '<button type="button" class="fila-ajuste" data-accion="elegir-voz">' +
+    '<span class="fila-texto"><strong>Idioma y voz</strong><small>' + esc(etiquetaVozActual()) + '</small></span>' +
+    '<span class="fila-flecha">›</span></button>';
   html += '<button type="button" class="btn btn-secundario btn-grande" style="margin:8px 0 12px" data-accion="probar-voz">Probar voz</button>';
   html += filaToggle("pitidos", "Pitidos", "Cuenta regresiva 3, 2, 1");
   html += filaToggle("vibracion", "Vibración", "Aviso al cambiar de movimiento");
@@ -1918,6 +2256,7 @@ async function importarArchivo(archivo) {
       }
     }
     await cargarTodo();
+    aplicarSeleccionVoz();
     cerrarHoja();
     pintarInicio();
     pintarConfig();
@@ -2358,6 +2697,41 @@ document.addEventListener("click", async (ev) => {
       break;
     }
     case "probar-voz": await probarVoz(); break;
+    case "elegir-voz": await abrirSelectorVoz(); break;
+    case "voz-auto":
+      await guardarSeleccionVoz({ vozIdioma: "auto", vozURI: "", vozLang: "", vozEtiqueta: "Automático" });
+      break;
+    case "voz-idioma": {
+      const lang = el.dataset.lang;
+      await guardarSeleccionVoz({ vozIdioma: lang, vozURI: "", vozLang: lang, vozEtiqueta: nombreIdioma(lang) });
+      break;
+    }
+    case "voz-elegir": {
+      const lang = el.dataset.lang;
+      const nombre = el.dataset.nombre || "Voz";
+      await guardarSeleccionVoz({
+        vozIdioma: lang,
+        vozURI: el.dataset.uri,
+        vozLang: lang,
+        vozEtiqueta: nombreIdioma(lang) + " · " + nombre
+      });
+      break;
+    }
+    case "voz-probar": await probarVozCon(el.dataset.uri, el.dataset.lang, el.dataset.nombre); break;
+    case "voz-instalar": {
+      const tts = pluginNativo("TextToSpeech");
+      if (tts && tts.openInstall) {
+        try { await tts.openInstall(); } catch (e) { aviso("No se pudieron abrir los ajustes de voz"); }
+      } else {
+        aviso("Esto solo está disponible en el APK");
+      }
+      break;
+    }
+    case "voz-recargar": {
+      await cargarVocesSelector();
+      if (estado.hojaTipo === "selector-voz") $("#hoja-cuerpo").innerHTML = htmlSelectorVoz();
+      break;
+    }
     case "step-config": {
       const clave = el.dataset.clave || el.dataset.campo;
       const delta = Number(el.dataset.delta);

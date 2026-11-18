@@ -96,6 +96,8 @@ lo que hay en `docs/` sea lo mismo que quedó dentro del APK.
 - El respaldo es **exportar/importar un JSON**; no se sincroniza solo.
 - La voz usa el **motor del teléfono**. Prefiere español de México, luego español
   de EE. UU., luego inglés de EE. UU.; si no hay ninguno, el idioma por defecto.
+  En Ajustes se puede elegir un idioma o una voz concreta. Si la voz es inglesa,
+  las frases fijas se dicen en inglés.
 - El APK se instala **por fuera de la tienda**; no hay Play Store de por medio.
 - Cada ejercicio elige si empieza por la bajada o por la subida, y sus dos movimientos
   pueden llamarse distinto (ABAJO/ARRIBA, ATRÁS/ADELANTE). Las series copian el orden

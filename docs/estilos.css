@@ -568,6 +568,11 @@ img{display:block;max-width:100%}
 }
 .fila-ajuste .fila-texto{flex:1}
 .fila-ajuste small{display:block;margin-top:2px}
+.fila-voz .fila-texto{text-align:left}
+.voz-grupo{
+  font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--tenue);font-weight:800;margin:14px 2px 6px;
+}
 .switch{
   width:48px;height:28px;flex:0 0 48px;
   border-radius:99px;

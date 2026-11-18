@@ -48,8 +48,8 @@ La llave de firma y sus cuidados están en `AGENTS.md`.
 - **Entrenar**: vista previa del plan y botón para comenzar.
 - **Runner**: foto del movimiento, cuenta atrás, series/reps, pausa, saltar,
   +30 s de descanso y botón para silenciar la voz.
-- **Configuración** (engranaje): Ejercicios, Planes y Ajustes. En Ajustes está
-  **Probar voz**, para comprobar el motor de voz del teléfono.
+- **Configuración** (engranaje): Ejercicios, Planes y Ajustes. En Ajustes están
+  **Idioma y voz** y **Probar voz**, para elegir y comprobar el motor de voz.
 
 ## Ejercicios
 
@@ -98,5 +98,9 @@ esta carpeta (no lo subas al repo). Para restaurar: **Importar respaldo**.
   Si el navegador no la soporta, se usa audio silencioso como respaldo.
 - La voz prefiere español de México, luego español de EE. UU., luego inglés de
   EE. UU.; si no hay ninguno, usa la voz por defecto del teléfono.
+- En Ajustes → Idioma y voz se puede elegir un idioma o una voz concreta de las
+  instaladas; si no se elige nada, se usa el orden automático.
+- Si la voz efectiva es inglesa, las frases fijas se dicen en inglés; los nombres
+  de ejercicios y las etiquetas propias se quedan como están.
 - El cronómetro se basa en `performance.now()` y se pausa al ocultar la app.
 - Los tiempos son orientativos: no sustituyen supervisión profesional.
