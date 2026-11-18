@@ -96,6 +96,13 @@ lo que hay en `docs/` sea lo mismo que quedó dentro del APK.
 - El respaldo es **exportar/importar un JSON**; no se sincroniza solo.
 - La voz usa el **motor del teléfono**; si no tiene español, se avisa y se sigue.
 - El APK se instala **por fuera de la tienda**; no hay Play Store de por medio.
+- Cada ejercicio elige si empieza por la bajada o por la subida, y sus dos movimientos
+  pueden llamarse distinto (ABAJO/ARRIBA, ATRÁS/ADELANTE). Las series copian el orden
+  del ejercicio y pueden cambiarlo.
+- El peso es un dato informativo del ejercicio: se captura al crearlo o editarlo y solo
+  se muestra durante el entrenamiento. No entra en cálculos ni en el historial.
+- El botón de ejercicio rápido del inicio no guarda el ejercicio: hace una sesión de una
+  sola serie y en el historial aparece como ⚡ Improvisado.
 
 ## Pendiente
 

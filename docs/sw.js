@@ -1,5 +1,5 @@
 /* RUTINAS · service worker */
-const CACHE = "rutinas-v9";
+const CACHE = "rutinas-v10";
 
 const ARCHIVOS = [
   "./",

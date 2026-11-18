@@ -22,7 +22,9 @@ const estado = {
   borradorEj: null,
   planBorrador: null,
   hojaTipo: null,
-  fotoEditando: null
+  fotoEditando: null,
+  modoRapido: false,
+  ejercicioRapido: null
 };
 
 const urlsBlob = new Map();
@@ -73,7 +75,10 @@ function fechaClave(dt) {
   return d.getFullYear() + "-" + m + "-" + dia;
 }
 
-function ejercicioPorId(id) { return estado.ejercicios.find(e => e.id === id) || null; }
+function ejercicioPorId(id) {
+  if (estado.ejercicioRapido && estado.ejercicioRapido.id === id) return estado.ejercicioRapido;
+  return estado.ejercicios.find(e => e.id === id) || null;
+}
 function planPorId(id) { return estado.planes.find(p => p.id === id) || null; }
 function nombrePlan(id) {
   const p = planPorId(id);
@@ -165,6 +170,42 @@ async function guardarSemana() { await dbGuardar("semana", estado.semana); }
 /* ---------------- cálculos ---------------- */
 
 function esDescanso(ej) { return ej && ej.tipo === "descanso"; }
+
+const ETIQUETAS_FASE = { abajo: "ABAJO", arriba: "ARRIBA" };
+
+function capitalizar(texto) {
+  const t = String(texto == null ? "" : texto).trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : "";
+}
+
+function etiquetaFase(ej, tipo) {
+  const crudo = tipo === "arriba"
+    ? (ej && ej.etiquetaArriba)
+    : (ej && ej.etiquetaAbajo);
+  const texto = String(crudo == null ? "" : crudo).trim();
+  return texto || (tipo === "arriba" ? ETIQUETAS_FASE.arriba : ETIQUETAS_FASE.abajo);
+}
+
+function ordenDe(obj, ej) {
+  const propio = obj && obj.ordenFases;
+  if (propio === "subida" || propio === "bajada") return propio;
+  const base = ej && ej.ordenFases;
+  return base === "subida" ? "subida" : "bajada";
+}
+
+function pesoDe(ej) {
+  return String((ej && ej.peso) || "").trim();
+}
+
+function detalleFases(obj, ej) {
+  const tipos = ordenDe(obj, ej) === "subida" ? ["arriba", "abajo"] : ["abajo", "arriba"];
+  const partes = [];
+  tipos.forEach(tipo => {
+    const dur = Math.max(0, Number(tipo === "arriba" ? (obj && obj.subidaSeg) : (obj && obj.bajadaSeg)) || 0);
+    if (dur > 0) partes.push(dur + "s " + etiquetaFase(ej, tipo).toLowerCase());
+  });
+  return partes.join(" + ") || "sin tiempo";
+}
 
 function duracionEntrada(ent, ej, esUltima) {
   if (!ej) return 0;
@@ -346,7 +387,7 @@ function pintarEntrenar() {
       lado = Math.max(1, Number(ent.segundos) || 60) + " s";
     } else {
       vistos[ej.id] = (vistos[ej.id] || 0) + 1;
-      detalle = ent.reps + " reps · " + ent.bajadaSeg + "s + " + ent.subidaSeg + "s";
+      detalle = ent.reps + " reps · " + detalleFases(ent, ej);
       lado = "Serie " + vistos[ej.id] + "/" + totalSets[ej.id];
     }
     return '<div class="fila-entrada">' +
@@ -593,9 +634,24 @@ function construirPasos(plan) {
     const reps = Math.max(1, Number(ent.reps) || 1);
     const bajada = Math.max(0, Number(ent.bajadaSeg) || 0);
     const subida = Math.max(0, Number(ent.subidaSeg) || 0);
+    const fases = [
+      { tipo: "abajo", dur: bajada, aguante: Math.min(bajada, Number(ent.aguanteAbajoSeg) || 0) },
+      { tipo: "arriba", dur: subida, aguante: Math.min(subida, Number(ent.aguanteArribaSeg) || 0) }
+    ];
+    if (ordenDe(ent, ej) === "subida") fases.reverse();
+    const activas = fases.filter(f => f.dur > 0);
     for (let r = 1; r <= reps; r++) {
-      if (bajada > 0) pasos.push(Object.assign({}, base, { tipo: "abajo", dur: bajada, aguante: Math.min(bajada, Number(ent.aguanteAbajoSeg) || 0), rep: r, reps: reps }));
-      if (subida > 0) pasos.push(Object.assign({}, base, { tipo: "arriba", dur: subida, aguante: Math.min(subida, Number(ent.aguanteArribaSeg) || 0), rep: r, reps: reps }));
+      activas.forEach((fase, k) => {
+        pasos.push(Object.assign({}, base, {
+          tipo: fase.tipo,
+          dur: fase.dur,
+          aguante: fase.aguante,
+          rep: r,
+          reps: reps,
+          parte: k + 1,
+          cierraRep: k === activas.length - 1
+        }));
+      });
     }
 
     if (!esUltima && Number(ent.descansoSeg) > 0) {
@@ -679,9 +735,9 @@ function empezarPaso() {
     if (sig && paso.dur >= 8) hablar("Descanso. Sigue " + sig.ej.nombre);
     else hablar("Descanso");
   } else if (paso.tipo === "abajo") {
-    hablar(paso.ej.etiquetaAbajo ? paso.ej.etiquetaAbajo.toLowerCase() : "abajo");
+    hablar(etiquetaFase(paso.ej, "abajo").toLowerCase());
   } else {
-    hablar(paso.ej.etiquetaArriba ? paso.ej.etiquetaArriba.toLowerCase() : "arriba");
+    hablar(etiquetaFase(paso.ej, "arriba").toLowerCase());
   }
   guardarSnapshot();
 }
@@ -699,22 +755,24 @@ function pintarPaso(paso) {
 
   if (paso.tipo === "prep") etiqueta.textContent = "PREPÁRATE";
   else if (paso.tipo === "descanso") etiqueta.textContent = "DESCANSO";
-  else etiqueta.textContent = paso.tipo === "abajo"
-    ? (paso.ej.etiquetaAbajo || "ABAJO")
-    : (paso.ej.etiquetaArriba || "ARRIBA");
+  else etiqueta.textContent = etiquetaFase(paso.ej, paso.tipo);
 
   const urlI = urlBlob(paso.ej.fotoInicial);
   const urlF = urlBlob(paso.ej.fotoFinal);
   fotoA.src = urlI || "";
   fotoB.src = urlF || "";
 
-  let mostrarF = paso.tipo === "abajo" && urlF;
-  let mostrarI = (paso.tipo === "arriba" || paso.tipo === "prep" || paso.tipo === "descanso") && urlI;
+  const esMovimiento = paso.tipo === "abajo" || paso.tipo === "arriba";
+  let mostrarF = esMovimiento && paso.parte === 1 && urlF;
+  let mostrarI = ((esMovimiento && paso.parte === 2) || paso.tipo === "prep" || paso.tipo === "descanso") && urlI;
   if (paso.tipo === "descanso" && !urlI) mostrarI = false;
   fotoA.classList.toggle("visible", !!mostrarI);
   fotoB.classList.toggle("visible", !!mostrarF);
   fotoBox.classList.toggle("con-foto", !!(mostrarI || mostrarF));
   emoji.textContent = paso.ej.emoji || "💪";
+
+  const peso = pesoDe(paso.ej);
+  const conPeso = peso ? " · " + peso : "";
 
   $("#runner-ejercicio").textContent = (paso.ej.emoji || "💪") + " " + paso.ej.nombre;
   if (paso.tipo === "descanso") {
@@ -722,15 +780,17 @@ function pintarPaso(paso) {
     if (sig) {
       const prev = ejercicioAnteriorDesde(runner.idx);
       const misma = prev && prev.ej.id === sig.ej.id;
+      const pesoSig = pesoDe(sig.ej);
       $("#runner-detalle").textContent = "Sigue: " + (sig.ej.emoji || "💪") + " " + sig.ej.nombre +
-        (misma ? " · Serie " + sig.setNum + "/" + sig.setTotal : "");
+        (misma ? " · Serie " + sig.setNum + "/" + sig.setTotal : "") +
+        (pesoSig ? " · " + pesoSig : "");
     } else {
       $("#runner-detalle").textContent = "Recupera el aire";
     }
   } else if (paso.tipo === "prep") {
-    $("#runner-detalle").textContent = "Acomódate para empezar";
+    $("#runner-detalle").textContent = "Acomódate para empezar" + conPeso;
   } else {
-    $("#runner-detalle").textContent = "Rep " + paso.rep + "/" + paso.reps + " · Serie " + paso.setNum + "/" + paso.setTotal;
+    $("#runner-detalle").textContent = "Rep " + paso.rep + "/" + paso.reps + " · Serie " + paso.setNum + "/" + paso.setTotal + conPeso;
   }
 
   $("#btn-extra").hidden = paso.tipo !== "descanso";
@@ -789,8 +849,7 @@ function avanzar() {
   const paso = runner.pasos[runner.idx];
   if (!paso) { terminarEntrenamiento(false); return; }
 
-  if (paso.tipo === "abajo") { runner.repsHechas++; sumarRep(paso.entradaId); }
-  else if (paso.tipo === "arriba" && !(Number(paso.ent.bajadaSeg) > 0)) { runner.repsHechas++; sumarRep(paso.entradaId); }
+  if (paso.cierraRep) { runner.repsHechas++; sumarRep(paso.entradaId); }
 
   const siguiente = runner.pasos[runner.idx + 1];
   if (paso.tipo === "abajo" || paso.tipo === "arriba") {
@@ -970,10 +1029,13 @@ async function terminarEntrenamiento(abandonado) {
   }
 
   if (abandonado || !plan) {
+    estado.ejercicioRapido = null;
     mostrar("inicio");
     pintarInicio();
     return;
   }
+
+  if (plan.rapido) estado.ejercicioRapido = null;
 
   pitido(1180, 0.18, 0.3);
   vibrar([70, 50, 90]);
@@ -986,7 +1048,7 @@ async function terminarEntrenamiento(abandonado) {
     fecha: ahora,
     fechaClave: fechaClave(new Date()),
     planId: plan.id,
-    planNombre: plan.nombre,
+    planNombre: plan.nombreHistorial || plan.nombre,
     realSeg: realSeg,
     estimadoSeg: runner.estimado,
     setsHechos: setsHechos,
@@ -1046,7 +1108,7 @@ function metaEjercicio(ej) {
   if (esDescanso(ej)) return (ej.segundos || 60) + " s de descanso";
   const partes = [];
   partes.push((ej.reps || 8) + " reps");
-  partes.push((ej.bajadaSeg || 0) + "s + " + (ej.subidaSeg || 0) + "s");
+  partes.push(detalleFases(ej, ej));
   const aguante = (ej.aguanteAbajoSeg || 0) + (ej.aguanteArribaSeg || 0);
   if (aguante > 0) partes.push("aguante " + (ej.aguanteAbajoSeg || 0) + "/" + (ej.aguanteArribaSeg || 0) + " s");
   return partes.join(" · ");
@@ -1159,6 +1221,7 @@ function cerrarHoja() {
   estado.borradorEj = null;
   estado.planBorrador = null;
   estado.confirmarAccion = null;
+  estado.modoRapido = false;
 }
 
 function abrirSelectorPlan(dia) {
@@ -1193,10 +1256,16 @@ function abrirSelectorPlan(dia) {
 
 function abrirEditorEjercicio(id) {
   estado.hojaTipo = "editor-ejercicio";
+  estado.modoRapido = false;
   if (id) {
     const ej = ejercicioPorId(id);
     if (!ej) return;
-    estado.borradorEj = Object.assign({}, ej);
+    estado.borradorEj = Object.assign({
+      peso: "",
+      ordenFases: "bajada",
+      etiquetaAbajo: "ABAJO",
+      etiquetaArriba: "ARRIBA"
+    }, ej);
   } else {
     estado.borradorEj = {
       id: null, nombre: "", tipo: "reps", emoji: "💪", grupo: "",
@@ -1204,10 +1273,25 @@ function abrirEditorEjercicio(id) {
       descansoSeg: estado.config.descansoSeg, segundos: 60,
       fotoInicial: null, fotoFinal: null,
       etiquetaAbajo: "ABAJO", etiquetaArriba: "ARRIBA",
+      ordenFases: "bajada", peso: "",
       orden: estado.ejercicios.length + 1
     };
   }
   abrirHoja(id ? "Editar ejercicio" : "Nuevo ejercicio", htmlEditorEjercicio(), true);
+}
+
+function abrirEjercicioRapido() {
+  estado.hojaTipo = "editor-rapido";
+  estado.modoRapido = true;
+  estado.borradorEj = {
+    id: null, nombre: "", tipo: "reps", emoji: "💪", grupo: "",
+    reps: 8, bajadaSeg: 2, subidaSeg: 2, aguanteAbajoSeg: 1, aguanteArribaSeg: 1,
+    descansoSeg: 0, segundos: 60,
+    fotoInicial: null, fotoFinal: null,
+    etiquetaAbajo: "ABAJO", etiquetaArriba: "ARRIBA",
+    ordenFases: "bajada", peso: ""
+  };
+  abrirHoja("Ejercicio rápido", htmlEditorEjercicio(), true);
 }
 
 function stepperHTML(campo, valor, sufijo, min, max, opciones) {
@@ -1231,9 +1315,13 @@ function filaEditor(titulo, campo, valor, sufijo, min, max, scope, accion) {
 function htmlEditorEjercicio() {
   const ej = estado.borradorEj;
   if (!ej) return "";
+  const rapido = !!estado.modoRapido;
   const esDesc = ej.tipo === "descanso";
   const urlI = urlBlob(ej.fotoInicial);
   const urlF = urlBlob(ej.fotoFinal);
+  const etiquetaBaja = etiquetaFase(ej, "abajo");
+  const etiquetaSube = etiquetaFase(ej, "arriba");
+  const orden = ordenDe(ej);
 
   const cajaFoto = (tipo, url, etiqueta) =>
     '<div class="foto-item">' +
@@ -1246,21 +1334,52 @@ function htmlEditorEjercicio() {
     '<input type="file" accept="image/*" capture="environment" class="foto-camara-input" data-foto="' + tipo + '" data-camara="1" tabindex="-1" aria-hidden="true">' +
     '</div>';
 
-  const fotos = esDesc ? "" :
+  const fotos = (esDesc || rapido) ? "" :
     '<div class="fotos">' +
     cajaFoto("inicial", urlI, "Inicial") +
     cajaFoto("final", urlF, "Final") +
     '</div>' +
     '<p class="nota">Toca la foto para elegir de la galería, o el botón de cámara para tomar una nueva.</p>';
 
+  const botonOrden = (valor, texto) =>
+    '<button type="button" class="' + (orden === valor ? "activo" : "") + '" data-accion="orden-ejercicio" data-orden="' + valor + '">' + esc(texto) + '</button>';
+
+  const bloqueMovimiento = esDesc ? "" :
+    '<div class="campo"><span>Cómo se llaman</span>' +
+    '<div class="fila-campos-2">' +
+    '<label class="campo"><span>Al bajar</span><input type="text" id="ej-etiqueta-abajo" value="' + esc(ej.etiquetaAbajo || "") + '" placeholder="ABAJO" maxlength="14" autocomplete="off"></label>' +
+    '<label class="campo"><span>Al subir</span><input type="text" id="ej-etiqueta-arriba" value="' + esc(ej.etiquetaArriba || "") + '" placeholder="ARRIBA" maxlength="14" autocomplete="off"></label>' +
+    '</div></div>' +
+    '<div class="campo"><span>Empieza por</span><div class="segmentado">' +
+    botonOrden("bajada", capitalizar(etiquetaBaja)) +
+    botonOrden("subida", capitalizar(etiquetaSube)) +
+    '</div></div>';
+
+  const bloquePeso = esDesc ? "" :
+    '<label class="campo"><span>Peso (opcional)</span>' +
+    '<input type="text" id="ej-peso" value="' + esc(ej.peso || "") + '" placeholder="Ej. 20 kg" maxlength="20" autocomplete="off"></label>';
+
+  const filaBaja = filaEditor(capitalizar(etiquetaBaja), "bajadaSeg", ej.bajadaSeg || 0, " s", 0, 60) +
+    filaEditor("Aguantar " + etiquetaBaja.toLowerCase(), "aguanteAbajoSeg", ej.aguanteAbajoSeg || 0, " s", 0, 60);
+  const filaSube = filaEditor(capitalizar(etiquetaSube), "subidaSeg", ej.subidaSeg || 0, " s", 0, 60) +
+    filaEditor("Aguantar " + etiquetaSube.toLowerCase(), "aguanteArribaSeg", ej.aguanteArribaSeg || 0, " s", 0, 60);
+  const tiempos = orden === "subida" ? filaSube + filaBaja : filaBaja + filaSube;
+  const descanso = rapido ? "" : filaEditor("Descanso tras la serie", "descansoSeg", ej.descansoSeg || 0, " s", 0, 900);
+
   const campos = esDesc
     ? filaEditor("Duración", "segundos", ej.segundos || 60, " s", 5, 900)
-    : filaEditor("Repeticiones", "reps", ej.reps || 1, "", 1, 200) +
-      filaEditor("Bajada / atrás", "bajadaSeg", ej.bajadaSeg || 0, " s", 0, 60) +
-      filaEditor("Aguantar abajo", "aguanteAbajoSeg", ej.aguanteAbajoSeg || 0, " s", 0, 60) +
-      filaEditor("Subida / adelante", "subidaSeg", ej.subidaSeg || 0, " s", 0, 60) +
-      filaEditor("Aguantar arriba", "aguanteArribaSeg", ej.aguanteArribaSeg || 0, " s", 0, 60) +
-      filaEditor("Descanso tras la serie", "descansoSeg", ej.descansoSeg || 0, " s", 0, 900);
+    : filaEditor("Repeticiones", "reps", ej.reps || 1, "", 1, 200) + tiempos + descanso;
+
+  const tipoSelector = rapido ? "" :
+    '<div class="segmentado">' +
+    '<button type="button" class="' + (!esDesc ? "activo" : "") + '" data-accion="tipo-ejercicio" data-tipo="reps">Ejercicio</button>' +
+    '<button type="button" class="' + (esDesc ? "activo" : "") + '" data-accion="tipo-ejercicio" data-tipo="descanso">Descanso</button>' +
+    '</div>';
+
+  const acciones = rapido
+    ? '<button type="button" class="btn btn-principal" data-accion="empezar-rapido">Comenzar entrenamiento</button>'
+    : (ej.id ? '<button type="button" class="btn btn-peligro" data-accion="borrar-ejercicio">Eliminar</button>' : '') +
+      '<button type="button" class="btn btn-principal" data-accion="guardar-ejercicio">Guardar</button>';
 
   return '<div class="editor">' +
     '<label class="campo"><span>Nombre</span><input type="text" id="ej-nombre" value="' + esc(ej.nombre) + '" placeholder="Ej. Sentadillas" maxlength="40"></label>' +
@@ -1268,16 +1387,58 @@ function htmlEditorEjercicio() {
     '<label class="campo"><span>Emoji</span><input type="text" id="ej-emoji" value="' + esc(ej.emoji) + '" maxlength="6"></label>' +
     '<label class="campo"><span>Grupo</span><input type="text" id="ej-grupo" value="' + esc(ej.grupo) + '" placeholder="Piernas" maxlength="24"></label>' +
     '</div>' +
-    '<div class="segmentado">' +
-    '<button type="button" class="' + (!esDesc ? "activo" : "") + '" data-accion="tipo-ejercicio" data-tipo="reps">Ejercicio</button>' +
-    '<button type="button" class="' + (esDesc ? "activo" : "") + '" data-accion="tipo-ejercicio" data-tipo="descanso">Descanso</button>' +
-    '</div>' +
+    bloquePeso +
+    tipoSelector +
     fotos +
+    bloqueMovimiento +
     campos +
-    '<div class="acciones-editor">' +
-    (ej.id ? '<button type="button" class="btn btn-peligro" data-accion="borrar-ejercicio">Eliminar</button>' : '') +
-    '<button type="button" class="btn btn-principal" data-accion="guardar-ejercicio">Guardar</button>' +
-    '</div></div>';
+    '<div class="acciones-editor">' + acciones + '</div></div>';
+}
+
+function empezarRapido() {
+  const draft = estado.borradorEj;
+  if (!draft) return;
+  const nombre = String(draft.nombre || "").trim() || "Ejercicio rápido";
+  const bajada = Math.max(0, Number(draft.bajadaSeg) || 0);
+  const subida = Math.max(0, Number(draft.subidaSeg) || 0);
+  if (bajada <= 0 && subida <= 0) {
+    aviso("Pon al menos un tiempo de movimiento");
+    return;
+  }
+  const ej = Object.assign({}, draft, {
+    id: "rapido-" + uid(),
+    nombre: nombre,
+    tipo: "reps",
+    peso: String(draft.peso || "").trim(),
+    etiquetaAbajo: String(draft.etiquetaAbajo || "").trim() || "ABAJO",
+    etiquetaArriba: String(draft.etiquetaArriba || "").trim() || "ARRIBA",
+    ordenFases: ordenDe(draft),
+    fotoInicial: null,
+    fotoFinal: null
+  });
+  const entrada = {
+    uid: uid(),
+    ejercicioId: ej.id,
+    reps: Math.max(1, Number(draft.reps) || 1),
+    bajadaSeg: bajada,
+    subidaSeg: subida,
+    aguanteAbajoSeg: Math.min(bajada, Math.max(0, Number(draft.aguanteAbajoSeg) || 0)),
+    aguanteArribaSeg: Math.min(subida, Math.max(0, Number(draft.aguanteArribaSeg) || 0)),
+    descansoSeg: 0,
+    segundos: 60,
+    ordenFases: ej.ordenFases
+  };
+  const plan = {
+    id: "rapido-" + uid(),
+    nombre: nombre,
+    nombreHistorial: "⚡ Improvisado",
+    color: COLORES[0],
+    entradas: [entrada],
+    rapido: true
+  };
+  estado.ejercicioRapido = ej;
+  cerrarHoja();
+  iniciarEntrenamiento(plan, 0);
 }
 /* ---------------- editor de plan ---------------- */
 
@@ -1340,7 +1501,7 @@ function htmlEditorPlan() {
     }
     const detalle = esDescanso(ej)
       ? (Number(ent.segundos) || 60) + " s"
-      : ent.reps + " reps · " + ent.bajadaSeg + "s + " + ent.subidaSeg + "s";
+      : ent.reps + " reps · " + detalleFases(ent, ej);
     filas += '<div class="fila-editor" data-uid="' + ent.uid + '">' + asaHtml +
       '<span class="emoji">' + esc(ej.emoji || "💪") + '</span>' +
       '<button type="button" class="fila-texto" data-accion="editar-entrada" data-uid="' + ent.uid + '">' +
@@ -1385,16 +1546,26 @@ function abrirEditorEntrada(uidEnt) {
 function htmlEditorEntrada(ent, ej) {
   const fila = (titulo, campo, valor, sufijo, min, max) =>
     filaEditor(titulo, campo, valor, sufijo, min, max, "entrada", "entrada-step");
+  const etiquetaBaja = etiquetaFase(ej, "abajo");
+  const etiquetaSube = etiquetaFase(ej, "arriba");
+  const orden = ordenDe(ent, ej);
   let campos;
   if (esDescanso(ej)) {
     campos = fila("Duración", "segundos", Number(ent.segundos) || 60, " s", 5, 900);
   } else {
+    const botonOrden = (valor, texto) =>
+      '<button type="button" class="' + (orden === valor ? "activo" : "") + '" data-accion="orden-entrada" data-orden="' + valor + '">' + esc(texto) + '</button>';
+    const filaBaja = fila(capitalizar(etiquetaBaja), "bajadaSeg", ent.bajadaSeg, " s", 0, 60) +
+      fila("Aguantar " + etiquetaBaja.toLowerCase(), "aguanteAbajoSeg", ent.aguanteAbajoSeg || 0, " s", 0, 60);
+    const filaSube = fila(capitalizar(etiquetaSube), "subidaSeg", ent.subidaSeg, " s", 0, 60) +
+      fila("Aguantar " + etiquetaSube.toLowerCase(), "aguanteArribaSeg", ent.aguanteArribaSeg || 0, " s", 0, 60);
     campos =
       fila("Repeticiones", "reps", ent.reps, "", 1, 200) +
-      fila("Bajada / atrás", "bajadaSeg", ent.bajadaSeg, " s", 0, 60) +
-      fila("Aguantar abajo", "aguanteAbajoSeg", ent.aguanteAbajoSeg || 0, " s", 0, 60) +
-      fila("Subida / adelante", "subidaSeg", ent.subidaSeg, " s", 0, 60) +
-      fila("Aguantar arriba", "aguanteArribaSeg", ent.aguanteArribaSeg || 0, " s", 0, 60) +
+      '<div class="campo"><span>Empieza por</span><div class="segmentado">' +
+      botonOrden("bajada", capitalizar(etiquetaBaja)) +
+      botonOrden("subida", capitalizar(etiquetaSube)) +
+      '</div></div>' +
+      (orden === "subida" ? filaSube + filaBaja : filaBaja + filaSube) +
       fila("Descanso después", "descansoSeg", ent.descansoSeg || 0, " s", 0, 900);
   }
 
@@ -1451,7 +1622,8 @@ async function agregarEntrada(ejercicioId) {
     aguanteAbajoSeg: Number(ej.aguanteAbajoSeg) || 0,
     aguanteArribaSeg: Number(ej.aguanteArribaSeg) || 0,
     descansoSeg: estado.config.descansoSeg,
-    segundos: Number(ej.segundos) || 60
+    segundos: Number(ej.segundos) || 60,
+    ordenFases: ordenDe(ej)
   };
   plan.entradas.push(ent);
   await persistirPlan();
@@ -1467,6 +1639,10 @@ async function guardarEjercicio() {
   if (!ej) return;
   ej.nombre = String(ej.nombre || "").trim();
   if (!ej.nombre) { aviso("Ponle un nombre"); return; }
+  ej.peso = String(ej.peso || "").trim();
+  ej.etiquetaAbajo = String(ej.etiquetaAbajo || "").trim() || "ABAJO";
+  ej.etiquetaArriba = String(ej.etiquetaArriba || "").trim() || "ARRIBA";
+  ej.ordenFases = ordenDe(ej);
   if (!ej.id) ej.id = uid();
   if (ej.tipo === "descanso") {
     ej.emoji = ej.emoji || "⏸️";
@@ -1474,6 +1650,7 @@ async function guardarEjercicio() {
     ej.subidaSeg = 0;
     ej.aguanteAbajoSeg = 0;
     ej.aguanteArribaSeg = 0;
+    ej.peso = "";
   }
   await dbGuardar("ejercicios", ej);
   const i = estado.ejercicios.findIndex(e => e.id === ej.id);
@@ -1576,7 +1753,7 @@ async function exportar() {
   }
   const datos = {
     app: "rutinas",
-    version: 1,
+    version: 2,
     exportado: new Date().toISOString(),
     config: estado.config,
     semana: estado.semana,
@@ -1855,6 +2032,7 @@ document.addEventListener("click", async (ev) => {
       break;
     }
     case "elegir-plan": abrirSelectorPlan(null); break;
+    case "ejercicio-rapido": abrirEjercicioRapido(); break;
     case "reanudar": {
       const snap = leerSnapshot();
       const plan = snap && planPorId(snap.planId);
@@ -1910,6 +2088,13 @@ document.addEventListener("click", async (ev) => {
       $("#hoja-cuerpo").innerHTML = htmlEditorEjercicio();
       break;
     }
+    case "orden-ejercicio": {
+      if (!estado.borradorEj) break;
+      estado.borradorEj.ordenFases = el.dataset.orden === "subida" ? "subida" : "bajada";
+      $("#hoja-cuerpo").innerHTML = htmlEditorEjercicio();
+      break;
+    }
+    case "empezar-rapido": empezarRapido(); break;
     case "editor-step": {
       const ej = estado.borradorEj;
       if (!ej) break;
@@ -2019,6 +2204,15 @@ document.addEventListener("click", async (ev) => {
       ent[campo] = clamp((Number(ent[campo]) || 0) + delta, min, max);
       ent.aguanteAbajoSeg = clamp(Number(ent.aguanteAbajoSeg) || 0, 0, Number(ent.bajadaSeg) || 0);
       ent.aguanteArribaSeg = clamp(Number(ent.aguanteArribaSeg) || 0, 0, Number(ent.subidaSeg) || 0);
+      await persistirPlan();
+      refrescarEditorEntrada();
+      break;
+    }
+    case "orden-entrada": {
+      const plan = estado.planBorrador;
+      const ent = plan && plan.entradas.find(e => e.uid === estado.entradaUid);
+      if (!ent) break;
+      ent.ordenFases = el.dataset.orden === "subida" ? "subida" : "bajada";
       await persistirPlan();
       refrescarEditorEntrada();
       break;
@@ -2149,6 +2343,9 @@ document.addEventListener("input", (ev) => {
   if (t.id === "ej-nombre" && estado.borradorEj) estado.borradorEj.nombre = t.value;
   else if (t.id === "ej-emoji" && estado.borradorEj) estado.borradorEj.emoji = t.value;
   else if (t.id === "ej-grupo" && estado.borradorEj) estado.borradorEj.grupo = t.value;
+  else if (t.id === "ej-peso" && estado.borradorEj) estado.borradorEj.peso = t.value;
+  else if (t.id === "ej-etiqueta-abajo" && estado.borradorEj) estado.borradorEj.etiquetaAbajo = t.value;
+  else if (t.id === "ej-etiqueta-arriba" && estado.borradorEj) estado.borradorEj.etiquetaArriba = t.value;
   else if (t.id === "plan-nombre" && estado.planBorrador) {
     const plan = estado.planBorrador;
     plan.nombre = t.value;

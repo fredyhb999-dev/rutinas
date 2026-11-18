@@ -1,8 +1,8 @@
 # Rutinas
 
 App personal para seguir rutinas de ejercicio desde el celular: planes por día,
-tiempos guiados (bajada, aguante, subida), descansos, fotos de cada movimiento,
-voz en español, vibración e historial.
+tiempos guiados (bajada y subida, en el orden que elijas, con aguantes), descansos,
+fotos de cada movimiento, voz en español, vibración e historial.
 
 Es una PWA sin frameworks ni compilación: se sirve tal cual desde GitHub Pages, con los archivos en la carpeta `docs/`.
 
@@ -43,7 +43,8 @@ La llave de firma y sus cuidados están en `AGENTS.md`.
 
 ## Pantallas
 
-- **Inicio**: plan de hoy, duración, racha, semana e historial reciente.
+- **Inicio**: plan de hoy, duración, racha, semana, historial reciente y el botón
+  de ejercicio rápido (🏃) para improvisar una sesión sin crear un plan.
 - **Entrenar**: vista previa del plan y botón para comenzar.
 - **Runner**: foto del movimiento, cuenta atrás, series/reps, pausa, saltar,
   +30 s de descanso y botón para silenciar la voz.
@@ -52,8 +53,11 @@ La llave de firma y sus cuidados están en `AGENTS.md`.
 ## Ejercicios
 
 Cada ejercicio tiene dos fotos (posición inicial y final), repeticiones y
-tiempos: bajada, aguante abajo, subida y aguante arriba. Los aguantes son parte
-del tiempo de cada fase (si están en 0, la fase es solo movimiento).
+tiempos: bajada y subida, cada una con su aguante. Los aguantes son parte del
+tiempo de cada fase (si están en 0, la fase es solo movimiento). El ejercicio
+elige si empieza bajando o subiendo, y los dos movimientos pueden llamarse
+distinto (ABAJO/ARRIBA, ATRÁS/ADELANTE). También puede llevar un peso opcional,
+que solo se muestra mientras se entrena.
 
 "Descanso" es un ejercicio más: se puede insertar donde quieras, repetirlo
 tantas veces como necesites y ajustar sus segundos. Además, cada serie tiene su
