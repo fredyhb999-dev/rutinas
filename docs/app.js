@@ -492,22 +492,112 @@ if ("speechSynthesis" in window) {
   window.speechSynthesis.addEventListener("voiceschanged", cargarVoces);
 }
 
-/* En el APK la voz la pone el motor del teléfono. Si ese motor no tiene español
-   instalado, se avisa una vez, en vez de quedarse callado sin explicar por qué. */
+/* En el APK la voz la pone el motor del teléfono. Ese motor tarda en arrancar y
+   puede no tener español instalado. Por eso se reintenta la consulta y, si algo
+   falla, se avisa con un mensaje claro en vez de quedarse callado. */
 let vozLangNativa = "";
-let vozLangRevisada = false;
-async function prepararVozNativa() {
+let vozRevisada = false;
+let vozIntentos = 0;
+let vozPromesa = null;
+let vozAvisada = false;
+let vozFallos = 0;
+let vozErrorAvisada = false;
+
+function esApk() {
+  return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+
+function prepararVozNativa() {
+  if (!esApk()) return Promise.resolve();
   const tts = pluginNativo("TextToSpeech");
-  if (!tts || vozLangRevisada) return;
-  vozLangRevisada = true;
-  try {
-    const r = await tts.getSupportedLanguages();
-    const lista = (r && r.languages) || [];
-    vozLangNativa = lista.find(l => /^es[-_]ES/i.test(l)) || lista.find(l => /^es/i.test(l)) || "";
-    if (!vozLangNativa) {
-      aviso("El teléfono no tiene voz en español. Actívala en Ajustes → Idiomas → Texto a voz.");
+  if (!tts) {
+    if (!vozRevisada && vozIntentos < 20) {
+      vozIntentos++;
+      setTimeout(prepararVozNativa, 400);
+    } else if (!vozRevisada) {
+      avisarVozError();
     }
-  } catch (e) {}
+    return Promise.resolve();
+  }
+  if (vozRevisada) return Promise.resolve();
+  if (vozPromesa) return vozPromesa;
+
+  vozPromesa = (async () => {
+    try {
+      const r = await tts.getSupportedLanguages();
+      const lista = (r && r.languages) || [];
+      if (lista.length) {
+        vozLangNativa = lista.find(l => /^es[-_]ES/i.test(l)) || lista.find(l => /^es/i.test(l)) || "";
+        vozRevisada = true;
+        if (!vozLangNativa && !vozAvisada) {
+          vozAvisada = true;
+          aviso("El teléfono no tiene voz en español. Actívala en Ajustes → Idiomas → Texto a voz.");
+        }
+      }
+    } catch (e) {
+    } finally {
+      vozPromesa = null;
+      vozIntentos++;
+    }
+    // Si el motor todavía no contestó, se vuelve a preguntar en un momento.
+    if (!vozRevisada && vozIntentos < 20) {
+      setTimeout(prepararVozNativa, 400);
+    } else if (!vozRevisada) {
+      avisarVozError();
+    }
+  })();
+
+  return vozPromesa;
+}
+
+function avisarVozError() {
+  if (vozErrorAvisada) return;
+  vozErrorAvisada = true;
+  aviso("No se pudo usar la voz del teléfono. Revisa Ajustes → Texto a voz.");
+}
+
+async function probarVoz() {
+  const tts = pluginNativo("TextToSpeech");
+  const texto = "La voz funciona";
+  detenerVoz();
+
+  if (tts) {
+    // El botón sirve también para volver a revisar después de instalar la voz.
+    vozRevisada = false;
+    vozLangNativa = "";
+    vozIntentos = 0;
+    await prepararVozNativa();
+    if (!vozLangNativa) {
+      aviso(vozRevisada
+        ? "El teléfono no tiene voz en español. Actívala en Ajustes → Idiomas → Texto a voz."
+        : "El motor de voz del teléfono todavía no responde. Espera unos segundos y vuelve a probar.");
+      return;
+    }
+    try {
+      await tts.speak({ text: texto, lang: vozLangNativa, rate: 1.1, pitch: 1, volume: 1 });
+      aviso("Voz de prueba: " + vozLangNativa + ". Si no la oyes, sube el volumen.");
+    } catch (e) {
+      aviso("No se pudo usar la voz del teléfono. Revisa Ajustes → Texto a voz.");
+    }
+    return;
+  }
+
+  if ("speechSynthesis" in window) {
+    try {
+      const u = new SpeechSynthesisUtterance(texto);
+      u.lang = "es-ES";
+      u.rate = 1.1;
+      const v = voces.find(v => /^es[-_]ES/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
+      if (v) u.voice = v;
+      window.speechSynthesis.speak(u);
+      aviso("Voz de prueba. Si no la oyes, sube el volumen.");
+    } catch (e) {
+      aviso("No se pudo usar la voz del navegador");
+    }
+    return;
+  }
+
+  aviso("Este teléfono no tiene voz disponible");
 }
 
 function detenerVoz() {
@@ -517,7 +607,10 @@ function detenerVoz() {
   }
   const tts = pluginNativo("TextToSpeech");
   if (tts) {
-    try { tts.stop(); } catch (e) {}
+    try {
+      const p = tts.stop();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) {}
     return;
   }
   if ("speechSynthesis" in window) {
@@ -531,14 +624,27 @@ function hablar(texto, retraso) {
   if (!tts && !("speechSynthesis" in window)) return;
   detenerVoz();
   const espera = Math.max(0, retraso === undefined ? 170 : retraso);
-  runner.vozTimer = setTimeout(() => {
+  runner.vozTimer = setTimeout(async () => {
     runner.vozTimer = 0;
     if (!runner.voz || !estado.config.voz) return;
     if (tts) {
-      // En el APK no hay speechSynthesis: habla el motor de voz del teléfono.
+      // En el APK habla el motor de voz del teléfono. Antes hay que saber qué
+      // idioma español soporta; si el motor aún no arrancó, se espera aquí.
+      if (!vozLangNativa && !vozRevisada) await prepararVozNativa();
+      if (!vozLangNativa) return;
       try {
-        tts.speak({ text: texto, lang: vozLangNativa || "es-ES", rate: 1.18, pitch: 1, volume: 1 });
-      } catch (e) {}
+        await tts.speak({
+          text: texto,
+          lang: vozLangNativa,
+          rate: 1.18,
+          pitch: 1,
+          volume: 1
+        });
+        vozFallos = 0;
+      } catch (e) {
+        vozFallos++;
+        if (vozFallos >= 2) avisarVozError();
+      }
       return;
     }
     try {
@@ -1180,6 +1286,7 @@ function pintarAjustes() {
 
   let html = '<div class="seccion-ajustes"><h2>Durante el entrenamiento</h2>';
   html += filaToggle("voz", "Voz", "Dice abajo, arriba, aguanta, descanso y qué sigue");
+  html += '<button type="button" class="btn btn-secundario btn-grande" style="margin:8px 0 12px" data-accion="probar-voz">Probar voz</button>';
   html += filaToggle("pitidos", "Pitidos", "Cuenta regresiva 3, 2, 1");
   html += filaToggle("vibracion", "Vibración", "Aviso al cambiar de movimiento");
   html += filaToggle("wakeLock", "Mantener pantalla encendida", "Evita que el teléfono se duerma");
@@ -2235,6 +2342,7 @@ document.addEventListener("click", async (ev) => {
       pintarAjustes();
       break;
     }
+    case "probar-voz": await probarVoz(); break;
     case "step-config": {
       const clave = el.dataset.clave || el.dataset.campo;
       const delta = Number(el.dataset.delta);

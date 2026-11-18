@@ -48,7 +48,8 @@ La llave de firma y sus cuidados están en `AGENTS.md`.
 - **Entrenar**: vista previa del plan y botón para comenzar.
 - **Runner**: foto del movimiento, cuenta atrás, series/reps, pausa, saltar,
   +30 s de descanso y botón para silenciar la voz.
-- **Configuración** (engranaje): Ejercicios, Planes y Ajustes.
+- **Configuración** (engranaje): Ejercicios, Planes y Ajustes. En Ajustes está
+  **Probar voz**, para comprobar el motor de voz del teléfono.
 
 ## Ejercicios
 
