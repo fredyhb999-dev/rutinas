@@ -70,7 +70,8 @@ propio "descanso después".
 En la semana puedes poner **varios planes el mismo día**, y un plan puede
 repetirse en varios días. En Inicio ves los planes de hoy: si hay uno aparece su
 tarjeta con "Comenzar"; si hay varios aparecen en una lista y cada uno se empieza
-por separado.
+por separado. Tanto en Configuración → Planes como al elegir el plan de un día
+hay un buscador por nombre.
 
 En la tira de la semana, un día se marca con ✓ cuando hiciste **al menos una**
 sesión ese día (también cuenta el ejercicio rápido). Cada plan se marca con ✓

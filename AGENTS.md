@@ -110,7 +110,8 @@ lo que hay en `docs/` sea lo mismo que quedó dentro del APK.
 - El botón **Atrás** del teléfono navega hacia el inicio (cerrando hojas) y en el
   inicio pide un segundo atrás para salir.
 - La lista de ejercicios tiene **buscador**; deslizar una fila a la izquierda revela
-  **Eliminar**, y siempre pide confirmación.
+  **Eliminar**, y siempre pide confirmación. La lista de planes también tiene
+  buscador, en Configuración → Planes y en el selector del día.
 - Un plan se puede **exportar/importar aparte** con sus ejercicios y fotos. Al
   importar, lo que trae con valor manda: se actualiza el plan por nombre (conserva
   sus días) y los ejercicios existentes, y se agregan los que falten. Los campos

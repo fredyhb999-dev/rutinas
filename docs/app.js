@@ -26,7 +26,9 @@ const estado = {
   fotoEditando: null,
   modoRapido: false,
   ejercicioRapido: null,
-  busquedaEjercicios: ""
+  busquedaEjercicios: "",
+  busquedaPlanes: "",
+  busquedaPlanesDia: ""
 };
 
 let ultimoAtras = 0;
@@ -1797,22 +1799,29 @@ document.addEventListener("pointerdown", (ev) => {
 
 function pintarPlanes() {
   const cont = $("#panel-planes");
-  let html = '<div class="panel-cab"><span>' + estado.planes.length + ' planes</span>' +
+  const total = estado.planes.length;
+  let html = '<div class="panel-cab"><span id="contador-planes">' + total + ' ' + (total === 1 ? "plan" : "planes") + '</span>' +
     '<button type="button" class="btn btn-chico" data-accion="nuevo-plan">＋ Nuevo</button></div>';
 
-  if (!estado.planes.length) {
+  if (!total) {
     html += '<p class="nota">Todavía no tienes planes. Crea uno y añade ejercicios.</p>';
   } else {
-    html += '<div class="lista">';
+    html += '<div class="buscador">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>' +
+      '<input type="text" id="buscar-plan" inputmode="search" autocomplete="off" placeholder="Buscar plan por nombre" value="' + esc(estado.busquedaPlanes) + '" aria-label="Buscar plan">' +
+      '<button type="button" class="buscador-limpiar" id="limpiar-busqueda-plan" data-accion="limpiar-busqueda-plan" aria-label="Limpiar búsqueda" hidden>×</button>' +
+      '</div>';
+    html += '<div class="lista" id="lista-planes">';
     estado.planes.forEach(p => {
       const dias = DIAS.filter(d => planEstaEnDia(d, p.id)).map(d => DIAS_CORTOS[DIAS.indexOf(d)]).join(" · ");
-      html += '<button type="button" class="fila-plan" data-accion="editar-plan" data-id="' + esc(p.id) + '">' +
+      html += '<button type="button" class="fila-plan" data-accion="editar-plan" data-id="' + esc(p.id) + '" data-buscar="' + esc(normalizarBusqueda(p.nombre)) + '">' +
         '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
         '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong>' +
         '<small>' + contarSeries(p) + ' series · ' + fmtDuracion(estimarPlan(p)) + (dias ? ' · ' + dias : '') + '</small></span>' +
         '<span class="fila-flecha">›</span></button>';
     });
     html += '</div>';
+    html += '<p class="nota" id="sin-planes" hidden></p>';
   }
 
   html += '<div class="seccion-ajustes"><h2>Asignar a la semana</h2><div class="semana-config">';
@@ -1831,6 +1840,38 @@ function pintarPlanes() {
   });
   html += '</div></div>';
   cont.innerHTML = html;
+  filtrarPlanes();
+}
+
+function filtrarPlanes() {
+  const cont = $("#lista-planes");
+  if (!cont) return;
+  const q = normalizarBusqueda(estado.busquedaPlanes).trim();
+  const palabras = q ? q.split(/\s+/).filter(Boolean) : [];
+  const filas = $$(".fila-plan", cont);
+  let visibles = 0;
+  filas.forEach(fila => {
+    const texto = String(fila.dataset.buscar || "");
+    const coincide = !palabras.length || palabras.every(p => texto.includes(p));
+    fila.hidden = !coincide;
+    if (coincide) visibles++;
+  });
+  const total = filas.length;
+  const unidad = total === 1 ? " plan" : " planes";
+  const contador = $("#contador-planes");
+  if (contador) {
+    contador.textContent = palabras.length
+      ? visibles + " de " + total + unidad
+      : total + unidad;
+  }
+  const limpiar = $("#limpiar-busqueda-plan");
+  if (limpiar) limpiar.hidden = !palabras.length;
+  const sin = $("#sin-planes");
+  if (sin) {
+    const mostrarSin = palabras.length > 0 && total > 0 && visibles === 0;
+    sin.hidden = !mostrarSin;
+    if (mostrarSin) sin.textContent = 'No hay planes que coincidan con "' + estado.busquedaPlanes.trim() + '".';
+  }
 }
 
 /* ---------------- selector de idioma y voz ---------------- */
@@ -2030,7 +2071,9 @@ function abrirSelectorPlan(dia) {
   estado.diaSelector = dia || null;
   if (dia) {
     estado.hojaTipo = "selector-dia";
+    estado.busquedaPlanesDia = "";
     abrirHoja("Planes del " + DIAS_LARGOS[DIAS.indexOf(dia)].toLowerCase(), htmlSelectorDia(dia));
+    filtrarPlanesDia();
     return;
   }
 
@@ -2054,12 +2097,22 @@ function abrirSelectorPlan(dia) {
 function htmlSelectorDia(dia) {
   const ids = idsDelDia(dia);
   const hechos = planesHechos(fechaClaveDe(dia));
-  let html = '<p class="nota">Marca uno o varios planes para este día. El check de un plan es del día en que lo terminaste.</p><div class="lista">';
+  let html = '<p class="nota">Selecciona tu plan de ejercicios</p>';
+
+  if (estado.planes.length) {
+    html += '<div class="buscador">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>' +
+      '<input type="text" id="buscar-plan-dia" inputmode="search" autocomplete="off" placeholder="Buscar plan por nombre" value="' + esc(estado.busquedaPlanesDia) + '" aria-label="Buscar plan">' +
+      '<button type="button" class="buscador-limpiar" id="limpiar-busqueda-plan-dia" data-accion="limpiar-busqueda-plan-dia" aria-label="Limpiar búsqueda" hidden>×</button>' +
+      '</div>';
+  }
+
+  html += '<div class="lista" id="lista-planes-dia">';
 
   estado.planes.forEach(p => {
     const dentro = ids.includes(p.id);
     const hecho = hechos.has(p.id);
-    html += '<button type="button" class="fila-plan' + (dentro ? " activa" : "") + '" data-accion="alternar-dia" data-id="' + esc(p.id) + '">' +
+    html += '<button type="button" class="fila-plan' + (dentro ? " activa" : "") + '" data-accion="alternar-dia" data-id="' + esc(p.id) + '" data-buscar="' + esc(normalizarBusqueda(p.nombre)) + '">' +
       '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
       '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong><small>' + contarSeries(p) + ' series · ' + fmtDuracion(estimarPlan(p)) + (hecho ? ' · ✓ Hecho' : '') + '</small></span>' +
       '<span class="fila-check">' + (dentro ? "✓" : "") + '</span>' +
@@ -2067,12 +2120,36 @@ function htmlSelectorDia(dia) {
   });
 
   html += '</div>';
+  html += '<p class="nota" id="sin-planes-dia" hidden></p>';
   if (!estado.planes.length) html += '<p class="nota">Todavía no tienes planes.</p>';
   if (estado.planes.length) {
     html += '<button type="button" class="btn btn-secundario btn-grande" style="margin-top:10px" data-accion="dia-libre">Día libre</button>';
   }
   html += '<button type="button" class="btn btn-principal btn-grande" style="margin-top:10px" data-accion="cerrar-hoja">Listo</button>';
   return html;
+}
+
+function filtrarPlanesDia() {
+  const cont = $("#lista-planes-dia");
+  if (!cont) return;
+  const q = normalizarBusqueda(estado.busquedaPlanesDia).trim();
+  const palabras = q ? q.split(/\s+/).filter(Boolean) : [];
+  const filas = $$(".fila-plan", cont);
+  let visibles = 0;
+  filas.forEach(fila => {
+    const texto = String(fila.dataset.buscar || "");
+    const coincide = !palabras.length || palabras.every(p => texto.includes(p));
+    fila.hidden = !coincide;
+    if (coincide) visibles++;
+  });
+  const limpiar = $("#limpiar-busqueda-plan-dia");
+  if (limpiar) limpiar.hidden = !palabras.length;
+  const sin = $("#sin-planes-dia");
+  if (sin) {
+    const mostrarSin = palabras.length > 0 && filas.length > 0 && visibles === 0;
+    sin.hidden = !mostrarSin;
+    if (mostrarSin) sin.textContent = 'No hay planes que coincidan con "' + estado.busquedaPlanesDia.trim() + '".';
+  }
 }
 
 function refrescarSelectorDia() {
@@ -2082,6 +2159,7 @@ function refrescarSelectorDia() {
   const scroll = cuerpo.scrollTop;
   cuerpo.innerHTML = htmlSelectorDia(dia);
   cuerpo.scrollTop = scroll;
+  filtrarPlanesDia();
 }
 
 /* ---------------- editor de ejercicio ---------------- */
@@ -2288,6 +2366,7 @@ async function abrirEditorPlan(id) {
     if (!plan) return;
     estado.planBorrador = plan;
   } else {
+    estado.busquedaPlanes = "";
     const nuevo = {
       id: uid(),
       nombre: "Plan nuevo",
@@ -3202,6 +3281,20 @@ document.addEventListener("click", async (ev) => {
       filtrarEjercicios();
       break;
     }
+    case "limpiar-busqueda-plan": {
+      estado.busquedaPlanes = "";
+      const input = $("#buscar-plan");
+      if (input) { input.value = ""; input.focus(); }
+      filtrarPlanes();
+      break;
+    }
+    case "limpiar-busqueda-plan-dia": {
+      estado.busquedaPlanesDia = "";
+      const input = $("#buscar-plan-dia");
+      if (input) { input.value = ""; input.focus(); }
+      filtrarPlanesDia();
+      break;
+    }
     case "editar-ejercicio": abrirEditorEjercicio(id); break;
     case "tipo-ejercicio": {
       if (!estado.borradorEj) break;
@@ -3512,6 +3605,14 @@ document.addEventListener("input", (ev) => {
   else if (t.id === "buscar-ejercicio") {
     estado.busquedaEjercicios = t.value;
     filtrarEjercicios();
+  }
+  else if (t.id === "buscar-plan") {
+    estado.busquedaPlanes = t.value;
+    filtrarPlanes();
+  }
+  else if (t.id === "buscar-plan-dia") {
+    estado.busquedaPlanesDia = t.value;
+    filtrarPlanesDia();
   }
   else if (t.id === "plan-nombre" && estado.planBorrador) {
     const plan = estado.planBorrador;
