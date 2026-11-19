@@ -29,6 +29,7 @@ Por eso se usan los plugins nativos, con la versión web como respaldo:
 | Vibración | `navigator.vibrate` | `@capacitor/haptics` |
 | Voz | `speechSynthesis` | `@capacitor-community/text-to-speech` |
 | Pantalla encendida | `wakeLock` | respaldo con audio silencioso |
+| Botón atrás | historial del navegador | `@capacitor/app` |
 
 Para recompilar el APK después de cambiar `docs/`:
 
@@ -48,8 +49,8 @@ La llave de firma y sus cuidados están en `AGENTS.md`.
 - **Entrenar**: vista previa del plan y botón para comenzar.
 - **Runner**: foto del movimiento, cuenta atrás, series/reps, pausa, saltar,
   +30 s de descanso y botón para silenciar la voz.
-- **Configuración** (engranaje): Ejercicios, Planes y Ajustes. En Ajustes están
-  **Idioma y voz** y **Probar voz**, para elegir y comprobar el motor de voz.
+- **Configuración** (engranaje): Ejercicios (con buscador y deslizar para
+  eliminar), Planes y Ajustes. En Ajustes están **Idioma y voz** y **Probar voz**.
 
 ## Ejercicios
 
@@ -102,5 +103,7 @@ esta carpeta (no lo subas al repo). Para restaurar: **Importar respaldo**.
   instaladas; si no se elige nada, se usa el orden automático.
 - Si la voz efectiva es inglesa, las frases fijas se dicen en inglés; los nombres
   de ejercicios y las etiquetas propias se quedan como están.
+- El botón **Atrás** del teléfono navega hacia el inicio y cierra las hojas; en el
+  inicio pide un segundo atrás para salir.
 - El cronómetro se basa en `performance.now()` y se pausa al ocultar la app.
 - Los tiempos son orientativos: no sustituyen supervisión profesional.

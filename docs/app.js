@@ -22,10 +22,15 @@ const estado = {
   borradorEj: null,
   planBorrador: null,
   hojaTipo: null,
+  hojaAbierta: false,
   fotoEditando: null,
   modoRapido: false,
-  ejercicioRapido: null
+  ejercicioRapido: null,
+  busquedaEjercicios: ""
 };
+
+let ultimoAtras = 0;
+let hojaCierreTimer = 0;
 
 const urlsBlob = new Map();
 function urlBlob(blob) {
@@ -45,6 +50,15 @@ function esc(t) {
 }
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+function normalizarBusqueda(t) {
+  const s = String(t || "").toLowerCase();
+  try {
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  } catch (e) {
+    return s;
+  }
+}
 
 function fmtTiempo(seg) {
   seg = Math.max(0, Math.round(seg));
@@ -138,6 +152,7 @@ function mostrar(pantalla) {
   $$(".pantalla").forEach(p => {
     p.classList.toggle("activa", p.dataset.pantalla === pantalla);
   });
+  if (pantalla !== "inicio") ultimoAtras = 0;
   const activa = $(".pantalla.activa .contenido");
   if (activa) activa.scrollTop = 0;
 }
@@ -1521,21 +1536,180 @@ function metaEjercicio(ej) {
 
 function pintarEjercicios() {
   const cont = $("#panel-ejercicios");
-  let html = '<div class="panel-cab"><span>' + estado.ejercicios.length + ' ejercicios</span>' +
+  const total = estado.ejercicios.length;
+  let html = '<div class="panel-cab"><span id="contador-ejercicios">' + total + ' ' + (total === 1 ? "ejercicio" : "ejercicios") + '</span>' +
     '<button type="button" class="btn btn-chico" data-accion="nuevo-ejercicio">＋ Nuevo</button></div>';
-  html += '<div class="lista">';
+  html += '<div class="buscador">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>' +
+    '<input type="text" id="buscar-ejercicio" inputmode="search" autocomplete="off" placeholder="Buscar por nombre o grupo" value="' + esc(estado.busquedaEjercicios) + '" aria-label="Buscar ejercicio">' +
+    '<button type="button" class="buscador-limpiar" id="limpiar-busqueda" data-accion="limpiar-busqueda" aria-label="Limpiar búsqueda" hidden>×</button>' +
+    '</div>';
+  html += '<div class="lista" id="lista-ejercicios">';
   estado.ejercicios.forEach(ej => {
     const url = urlBlob(ej.fotoInicial);
-    html += '<button type="button" class="fila-ejercicio" data-accion="editar-ejercicio" data-id="' + esc(ej.id) + '">' +
+    const buscar = normalizarBusqueda(ej.nombre + " " + (ej.grupo || ""));
+    html += '<div class="fila-ejercicio-wrap" data-id="' + esc(ej.id) + '" data-buscar="' + esc(buscar) + '">' +
+      '<button type="button" class="fila-borrar" data-accion="borrar-ejercicio-lista" data-id="' + esc(ej.id) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M10 7V5h4v2"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>' +
+      '<span>Eliminar</span></button>' +
+      '<button type="button" class="fila-ejercicio" data-accion="editar-ejercicio" data-id="' + esc(ej.id) + '">' +
       '<span class="miniatura">' + (url ? '<img src="' + url + '" alt="">' : '<span>' + esc(ej.emoji || "💪") + '</span>') + '</span>' +
       '<span class="fila-texto"><strong>' + esc(ej.nombre) + '</strong><small>' + esc(metaEjercicio(ej)) + '</small></span>' +
       '<span class="fila-flecha">›</span>' +
-      '</button>';
+      '</button></div>';
   });
+  html += '<p class="nota" id="sin-resultados" hidden></p>';
   html += '</div>';
   html += '<p class="nota">Las fotos se guardan solo en este teléfono. Toca un ejercicio para cambiar sus tiempos, repeticiones o fotos.</p>';
   cont.innerHTML = html;
+  cerrarFilaAbierta();
+  filtrarEjercicios();
 }
+
+function filtrarEjercicios() {
+  const cont = $("#lista-ejercicios");
+  if (!cont) return;
+  const q = normalizarBusqueda(estado.busquedaEjercicios).trim();
+  const palabras = q ? q.split(/\s+/).filter(Boolean) : [];
+  const filas = $$(".fila-ejercicio-wrap", cont);
+  let visibles = 0;
+  filas.forEach(fila => {
+    const texto = String(fila.dataset.buscar || "");
+    const coincide = !palabras.length || palabras.every(p => texto.includes(p));
+    fila.hidden = !coincide;
+    if (coincide) visibles++;
+  });
+  const total = filas.length;
+  const contador = $("#contador-ejercicios");
+  if (contador) {
+    contador.textContent = palabras.length
+      ? visibles + " de " + total + " ejercicios"
+      : total + (total === 1 ? " ejercicio" : " ejercicios");
+  }
+  const limpiar = $("#limpiar-busqueda");
+  if (limpiar) limpiar.hidden = !palabras.length;
+  const sin = $("#sin-resultados");
+  if (sin) {
+    const mostrarSin = palabras.length > 0 && total > 0 && visibles === 0;
+    sin.hidden = !mostrarSin;
+    if (mostrarSin) sin.textContent = 'No hay ejercicios que coincidan con "' + estado.busquedaEjercicios.trim() + '".';
+  }
+  if (filaAbierta && filaAbierta.hidden) cerrarFilaAbierta();
+}
+
+/* ---------------- deslizar para eliminar ---------------- */
+
+let filaAbierta = null;
+const filaArrastre = {
+  activo: false,
+  wrap: null,
+  accion: null,
+  pointerId: null,
+  x0: 0,
+  y0: 0,
+  dx0: 0,
+  dx: 0,
+  movido: false,
+  eraAbierta: false
+};
+
+function cerrarFilaAbierta() {
+  if (!filaAbierta) return;
+  filaAbierta.classList.remove("abierta");
+  filaAbierta = null;
+}
+
+function bloquearClickFila(wrap) {
+  const fila = wrap.querySelector(".fila-ejercicio");
+  if (!fila) return;
+  const fn = (e) => { e.preventDefault(); e.stopPropagation(); };
+  fila.addEventListener("click", fn, { capture: true, once: true });
+  setTimeout(() => fila.removeEventListener("click", fn, true), 350);
+}
+
+function iniciarSwipeFila(ev) {
+  if (!ev.target || !ev.target.closest) return;
+  const wrap = ev.target.closest(".fila-ejercicio-wrap");
+  if (!wrap) return;
+  if (ev.target.closest(".fila-borrar")) return;
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  if (ev.isPrimary === false) return;
+  const accion = wrap.querySelector(".fila-borrar");
+  if (!accion) return;
+  if (filaAbierta && filaAbierta !== wrap) cerrarFilaAbierta();
+  const eraAbierta = wrap.classList.contains("abierta");
+  filaArrastre.activo = true;
+  filaArrastre.wrap = wrap;
+  filaArrastre.accion = accion;
+  filaArrastre.pointerId = ev.pointerId;
+  filaArrastre.x0 = ev.clientX;
+  filaArrastre.y0 = ev.clientY;
+  filaArrastre.dx0 = eraAbierta ? -84 : 0;
+  filaArrastre.dx = filaArrastre.dx0;
+  filaArrastre.movido = false;
+  filaArrastre.eraAbierta = eraAbierta;
+  try { wrap.setPointerCapture(ev.pointerId); } catch (e) {}
+}
+
+function moverSwipeFila(ev) {
+  if (!filaArrastre.activo || ev.pointerId !== filaArrastre.pointerId) return;
+  const dx = ev.clientX - filaArrastre.x0;
+  const dy = ev.clientY - filaArrastre.y0;
+  if (!filaArrastre.movido) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if (Math.abs(dy) > Math.abs(dx)) { cancelarSwipeFila(); return; }
+    filaArrastre.movido = true;
+    filaArrastre.wrap.classList.add("arrastrando");
+  }
+  ev.preventDefault();
+  const nuevo = Math.max(-84, Math.min(0, filaArrastre.dx0 + dx));
+  filaArrastre.dx = nuevo;
+  filaArrastre.accion.style.transform = "translateX(calc(100% + " + nuevo + "px))";
+}
+
+function terminarSwipeFila(ev) {
+  if (!filaArrastre.activo) return;
+  if (ev && ev.pointerId !== undefined && ev.pointerId !== filaArrastre.pointerId) return;
+  const { wrap, accion, movido, eraAbierta, dx } = filaArrastre;
+  filaArrastre.activo = false;
+  if (!wrap) return;
+  wrap.classList.remove("arrastrando");
+  if (accion) accion.style.transform = "";
+  if (movido) {
+    const abrir = dx < -42;
+    if (abrir) {
+      wrap.classList.add("abierta");
+      filaAbierta = wrap;
+    } else {
+      wrap.classList.remove("abierta");
+      if (filaAbierta === wrap) filaAbierta = null;
+    }
+    bloquearClickFila(wrap);
+  } else if (eraAbierta) {
+    wrap.classList.remove("abierta");
+    if (filaAbierta === wrap) filaAbierta = null;
+    bloquearClickFila(wrap);
+  }
+}
+
+function cancelarSwipeFila() {
+  if (!filaArrastre.activo) return;
+  const { wrap, accion } = filaArrastre;
+  filaArrastre.activo = false;
+  if (!wrap) return;
+  wrap.classList.remove("arrastrando");
+  if (accion) accion.style.transform = "";
+}
+
+document.addEventListener("pointerdown", iniciarSwipeFila);
+window.addEventListener("pointermove", moverSwipeFila, { passive: false });
+window.addEventListener("pointerup", terminarSwipeFila);
+window.addEventListener("pointercancel", cancelarSwipeFila);
+document.addEventListener("pointerdown", (ev) => {
+  if (!filaAbierta) return;
+  if (filaAbierta.contains(ev.target)) return;
+  cerrarFilaAbierta();
+});
 
 function pintarPlanes() {
   const cont = $("#panel-planes");
@@ -1728,8 +1902,16 @@ function pintarAjustes() {
 /* ---------------- hojas ---------------- */
 
 function abrirHoja(titulo, html, completa) {
+  clearTimeout(hojaCierreTimer);
+  hojaCierreTimer = 0;
+  ultimoAtras = 0;
+  estado.hojaAbierta = true;
   $("#hoja-titulo").textContent = titulo;
-  $("#hoja-cuerpo").innerHTML = html;
+  const cuerpo = $("#hoja-cuerpo");
+  cuerpo.innerHTML = html;
+  cuerpo.scrollTop = 0;
+  requestAnimationFrame(() => { cuerpo.scrollTop = 0; });
+  setTimeout(() => { cuerpo.scrollTop = 0; }, 60);
   $("#hoja").classList.toggle("completa", !!completa);
   const fondo = $("#hoja-fondo");
   fondo.hidden = false;
@@ -1738,8 +1920,10 @@ function abrirHoja(titulo, html, completa) {
 
 function cerrarHoja() {
   const fondo = $("#hoja-fondo");
+  estado.hojaAbierta = false;
   fondo.classList.remove("abierta");
-  setTimeout(() => {
+  clearTimeout(hojaCierreTimer);
+  hojaCierreTimer = setTimeout(() => {
     fondo.hidden = true;
     $("#hoja-cuerpo").innerHTML = "";
   }, 220);
@@ -1811,8 +1995,8 @@ function abrirEjercicioRapido() {
   estado.modoRapido = true;
   estado.borradorEj = {
     id: null, nombre: "", tipo: "reps", emoji: "💪", grupo: "",
-    reps: 8, bajadaSeg: 2, subidaSeg: 2, aguanteAbajoSeg: 1, aguanteArribaSeg: 1,
-    descansoSeg: 0, segundos: 60,
+    series: 1, reps: 8, bajadaSeg: 2, subidaSeg: 2, aguanteAbajoSeg: 1, aguanteArribaSeg: 1,
+    descansoSeg: estado.config.descansoSeg, segundos: 60,
     fotoInicial: null, fotoFinal: null,
     etiquetaAbajo: "ABAJO", etiquetaArriba: "ARRIBA",
     ordenFases: "bajada", peso: ""
@@ -1890,11 +2074,13 @@ function htmlEditorEjercicio() {
   const filaSube = filaEditor(capitalizar(etiquetaSube), "subidaSeg", ej.subidaSeg || 0, " s", 0, 60) +
     filaEditor("Aguantar " + etiquetaSube.toLowerCase(), "aguanteArribaSeg", ej.aguanteArribaSeg || 0, " s", 0, 60);
   const tiempos = orden === "subida" ? filaSube + filaBaja : filaBaja + filaSube;
-  const descanso = rapido ? "" : filaEditor("Descanso tras la serie", "descansoSeg", ej.descansoSeg || 0, " s", 0, 900);
+  const series = rapido ? Math.max(1, Number(ej.series) || 1) : 1;
+  const descanso = (rapido && series <= 1) ? "" : filaEditor("Descanso tras la serie", "descansoSeg", ej.descansoSeg || 0, " s", 0, 900);
 
   const campos = esDesc
     ? filaEditor("Duración", "segundos", ej.segundos || 60, " s", 5, 900)
-    : filaEditor("Repeticiones", "reps", ej.reps || 1, "", 1, 200) + tiempos + descanso;
+    : (rapido ? filaEditor("Series", "series", series, "", 1, 20) : "") +
+      filaEditor("Repeticiones", "reps", ej.reps || 1, "", 1, 200) + tiempos + descanso;
 
   const tipoSelector = rapido ? "" :
     '<div class="segmentado">' +
@@ -1942,24 +2128,29 @@ function empezarRapido() {
     fotoInicial: null,
     fotoFinal: null
   });
-  const entrada = {
-    uid: uid(),
-    ejercicioId: ej.id,
-    reps: Math.max(1, Number(draft.reps) || 1),
-    bajadaSeg: bajada,
-    subidaSeg: subida,
-    aguanteAbajoSeg: Math.min(bajada, Math.max(0, Number(draft.aguanteAbajoSeg) || 0)),
-    aguanteArribaSeg: Math.min(subida, Math.max(0, Number(draft.aguanteArribaSeg) || 0)),
-    descansoSeg: 0,
-    segundos: 60,
-    ordenFases: ej.ordenFases
-  };
+  const series = Math.max(1, Number(draft.series) || 1);
+  const descansoSeg = Math.max(0, Number(draft.descansoSeg) || 0);
+  const entradas = [];
+  for (let i = 0; i < series; i++) {
+    entradas.push({
+      uid: uid(),
+      ejercicioId: ej.id,
+      reps: Math.max(1, Number(draft.reps) || 1),
+      bajadaSeg: bajada,
+      subidaSeg: subida,
+      aguanteAbajoSeg: Math.min(bajada, Math.max(0, Number(draft.aguanteAbajoSeg) || 0)),
+      aguanteArribaSeg: Math.min(subida, Math.max(0, Number(draft.aguanteArribaSeg) || 0)),
+      descansoSeg: descansoSeg,
+      segundos: 60,
+      ordenFases: ej.ordenFases
+    });
+  }
   const plan = {
     id: "rapido-" + uid(),
     nombre: nombre,
     nombreHistorial: "⚡ Improvisado",
     color: COLORES[0],
-    entradas: [entrada],
+    entradas: entradas,
     rapido: true
   };
   estado.ejercicioRapido = ej;
@@ -2169,6 +2360,7 @@ async function guardarEjercicio() {
   ej.etiquetaAbajo = String(ej.etiquetaAbajo || "").trim() || "ABAJO";
   ej.etiquetaArriba = String(ej.etiquetaArriba || "").trim() || "ARRIBA";
   ej.ordenFases = ordenDe(ej);
+  const eraNuevo = !ej.id;
   if (!ej.id) ej.id = uid();
   if (ej.tipo === "descanso") {
     ej.emoji = ej.emoji || "⏸️";
@@ -2183,6 +2375,7 @@ async function guardarEjercicio() {
   if (i >= 0) estado.ejercicios[i] = ej;
   else estado.ejercicios.push(ej);
   estado.ejercicios.sort((a, b) => (a.orden || 99) - (b.orden || 99) || String(a.nombre).localeCompare(String(b.nombre)));
+  if (eraNuevo) estado.busquedaEjercicios = "";
   cerrarHoja();
   pintarEjercicios();
   aviso("Ejercicio guardado");
@@ -2191,6 +2384,17 @@ async function guardarEjercicio() {
 function borrarEjercicio() {
   const ej = estado.borradorEj;
   if (!ej || !ej.id) return;
+  prepararBorrarEjercicio(ej);
+}
+
+function borrarEjercicioDesdeLista(id) {
+  const ej = ejercicioPorId(id);
+  if (!ej) return;
+  cerrarFilaAbierta();
+  prepararBorrarEjercicio(ej);
+}
+
+function prepararBorrarEjercicio(ej) {
   const planes = estado.planes.filter(p => p.entradas.some(e => e.ejercicioId === ej.id));
   const mensaje = planes.length
     ? "Se usa en " + planes.length + " plan(es) y se quitará de ellos. ¿Eliminar de todos modos?"
@@ -2608,6 +2812,13 @@ document.addEventListener("click", async (ev) => {
     case "cerrar-resumen": mostrar("inicio"); pintarInicio(); break;
 
     case "nuevo-ejercicio": abrirEditorEjercicio(null); break;
+    case "limpiar-busqueda": {
+      estado.busquedaEjercicios = "";
+      const input = $("#buscar-ejercicio");
+      if (input) { input.value = ""; input.focus(); }
+      filtrarEjercicios();
+      break;
+    }
     case "editar-ejercicio": abrirEditorEjercicio(id); break;
     case "tipo-ejercicio": {
       if (!estado.borradorEj) break;
@@ -2643,6 +2854,7 @@ document.addEventListener("click", async (ev) => {
     }
     case "guardar-ejercicio": await guardarEjercicio(); break;
     case "borrar-ejercicio": borrarEjercicio(); break;
+    case "borrar-ejercicio-lista": borrarEjercicioDesdeLista(id); break;
 
     case "nuevo-plan": await abrirEditorPlan(null); break;
     case "editar-plan": await abrirEditorPlan(id); break;
@@ -2909,6 +3121,10 @@ document.addEventListener("input", (ev) => {
   else if (t.id === "ej-peso" && estado.borradorEj) estado.borradorEj.peso = t.value;
   else if (t.id === "ej-etiqueta-abajo" && estado.borradorEj) estado.borradorEj.etiquetaAbajo = t.value;
   else if (t.id === "ej-etiqueta-arriba" && estado.borradorEj) estado.borradorEj.etiquetaArriba = t.value;
+  else if (t.id === "buscar-ejercicio") {
+    estado.busquedaEjercicios = t.value;
+    filtrarEjercicios();
+  }
   else if (t.id === "plan-nombre" && estado.planBorrador) {
     const plan = estado.planBorrador;
     plan.nombre = t.value;
@@ -2970,6 +3186,75 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------------- arranque ---------------- */
 
+/* ---------------- botón atrás ---------------- */
+
+function manejarAtras() {
+  if (estado.hojaAbierta) {
+    if (estado.hojaTipo === "editor-entrada" || estado.hojaTipo === "selector-ejercicio") {
+      estado.hojaTipo = "editor-plan";
+      $("#hoja-titulo").textContent = "Editar plan";
+      const cuerpo = $("#hoja-cuerpo");
+      cuerpo.innerHTML = htmlEditorPlan();
+      cuerpo.scrollTop = 0;
+      return false;
+    }
+    cerrarHoja();
+    return false;
+  }
+
+  if (runner.activo) {
+    pedirSalirRunner();
+    return false;
+  }
+
+  const activa = $(".pantalla.activa");
+  const pantalla = activa ? activa.dataset.pantalla : "inicio";
+  if (pantalla !== "inicio") {
+    mostrar("inicio");
+    pintarInicio();
+    return false;
+  }
+
+  const ahora = Date.now();
+  if (ahora - ultimoAtras < 2000) {
+    ultimoAtras = 0;
+    const app = pluginNativo("App");
+    if (app && app.exitApp) {
+      try {
+        const p = app.exitApp();
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) {}
+    }
+    return true;
+  }
+  ultimoAtras = ahora;
+  aviso("Presiona otra vez para salir");
+  return false;
+}
+
+function configurarBotonAtras() {
+  if (esApk()) {
+    const app = pluginNativo("App");
+    if (app && app.addListener) {
+      try {
+        const p = app.addListener("backButton", manejarAtras);
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) {}
+    }
+    return;
+  }
+
+  if (location.protocol.indexOf("http") === 0) {
+    try { history.pushState({ rutinas: true }, ""); } catch (e) {}
+    window.addEventListener("popstate", () => {
+      const salir = manejarAtras();
+      if (!salir) {
+        try { history.pushState({ rutinas: true }, ""); } catch (e) {}
+      }
+    });
+  }
+}
+
 async function iniciarApp() {
   try {
     await cargarTodo();
@@ -2979,6 +3264,7 @@ async function iniciarApp() {
   pintarInicio();
   mostrar("inicio");
   prepararVozNativa();
+  configurarBotonAtras();
 
   // Dentro del APK los archivos ya vienen incluidos. Si quedara un service worker
   // de una instalación anterior, serviría una versión vieja de app.js y parecería

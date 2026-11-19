@@ -27,6 +27,7 @@ Por eso cada función dudosa lleva dos caminos:
 | Vibración | `navigator.vibrate` | `@capacitor/haptics` |
 | Voz | `speechSynthesis` | `@capacitor-community/text-to-speech` |
 | Pantalla encendida | `wakeLock` | audio silencioso de respaldo |
+| Botón atrás | historial del navegador | `@capacitor/app` |
 
 Los plugins se leen con `pluginNativo("Nombre")` en `docs/app.js`: si no hay
 Capacitor, cae a la versión web. **Ninguna función nativa se deja sin respaldo
@@ -104,8 +105,12 @@ lo que hay en `docs/` sea lo mismo que quedó dentro del APK.
   del ejercicio y pueden cambiarlo.
 - El peso es un dato informativo del ejercicio: se captura al crearlo o editarlo y solo
   se muestra durante el entrenamiento. No entra en cálculos ni en el historial.
-- El botón de ejercicio rápido del inicio no guarda el ejercicio: hace una sesión de una
-  sola serie y en el historial aparece como ⚡ Improvisado.
+- El botón de ejercicio rápido del inicio no guarda el ejercicio: hace una sesión
+  con las series que indiques y en el historial aparece como ⚡ Improvisado.
+- El botón **Atrás** del teléfono navega hacia el inicio (cerrando hojas) y en el
+  inicio pide un segundo atrás para salir.
+- La lista de ejercicios tiene **buscador**; deslizar una fila a la izquierda revela
+  **Eliminar**, y siempre pide confirmación.
 
 ## Pendiente
 
