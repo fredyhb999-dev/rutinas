@@ -1887,9 +1887,11 @@ function pintarAjustes() {
   html += '</div>';
 
   html += '<div class="seccion-ajustes"><h2>Datos</h2>';
-  html += '<button type="button" class="btn btn-secundario btn-grande" data-accion="exportar">Exportar respaldo</button>';
+  html += '<button type="button" class="btn btn-secundario btn-grande" data-accion="exportar-plan">Exportar plan de ejercicio</button>';
+  html += '<button type="button" class="btn btn-secundario btn-grande" style="margin-top:8px" data-accion="importar-plan">Importar plan de ejercicio</button>';
+  html += '<button type="button" class="btn btn-secundario btn-grande" style="margin-top:8px" data-accion="exportar">Exportar respaldo</button>';
   html += '<button type="button" class="btn btn-secundario btn-grande" style="margin-top:8px" data-accion="importar">Importar respaldo</button>';
-  html += '<p class="nota">El respaldo incluye ejercicios, fotos, planes e historial. Guárdalo fuera de la carpeta del proyecto y hazlo de vez en cuando.</p>';
+  html += '<p class="nota">El plan incluye solo ese plan y sus ejercicios con fotos. Al importarlo se actualiza si ya existe o se agrega, sin borrar lo demás. El respaldo incluye ejercicios, fotos, planes e historial.</p>';
   html += '</div>';
 
   html += '<div class="seccion-ajustes"><h2>Historial</h2>';
@@ -2532,6 +2534,253 @@ async function importarArchivo(archivo) {
     aviso("Respaldo importado");
   });
 }
+/* ---------------- exportar / importar un plan ---------------- */
+
+function slugArchivo(texto) {
+  const base = normalizarBusqueda(texto).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return base.slice(0, 40) || "plan";
+}
+
+function colorPlanValido(color) {
+  return /^#[0-9a-f]{6}$/i.test(String(color || ""));
+}
+
+function abrirSelectorExportarPlan() {
+  if (!estado.planes.length) { aviso("Todavía no tienes planes"); return; }
+  estado.hojaTipo = "selector-exportar-plan";
+  let html = '<p class="nota">Elige el plan que quieres guardar. Se incluyen sus ejercicios y fotos.</p><div class="lista">';
+  estado.planes.forEach(p => {
+    html += '<button type="button" class="fila-plan" data-accion="exportar-plan-elegido" data-id="' + esc(p.id) + '">' +
+      '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
+      '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong><small>' + contarSeries(p) + ' series · ' + fmtDuracion(estimarPlan(p)) + '</small></span>' +
+      '<span class="fila-flecha">›</span></button>';
+  });
+  html += '</div>';
+  abrirHoja("Exportar plan", html);
+}
+
+async function exportarPlan(id) {
+  const plan = planPorId(id);
+  if (!plan) return;
+  const usados = new Map();
+  for (const ent of plan.entradas) {
+    const ej = ejercicioPorId(ent.ejercicioId);
+    if (!ej) {
+      aviso("El plan tiene series de un ejercicio eliminado. Edítalo antes de exportar.");
+      return;
+    }
+    usados.set(ej.id, ej);
+  }
+  aviso("Preparando plan…");
+  const ejercicios = [];
+  for (const ej of usados.values()) {
+    ejercicios.push(Object.assign({}, ej, {
+      fotoInicial: await blobADataURL(ej.fotoInicial),
+      fotoFinal: await blobADataURL(ej.fotoFinal)
+    }));
+  }
+  const datos = {
+    app: "rutinas",
+    tipo: "plan",
+    version: 1,
+    exportado: new Date().toISOString(),
+    plan: plan,
+    ejercicios: ejercicios
+  };
+  const blob = new Blob([JSON.stringify(datos)], { type: "application/json" });
+  descargar(blob, "rutinas-plan-" + slugArchivo(plan.nombre) + "-" + fechaClave() + ".json");
+  cerrarHoja();
+  aviso("Plan exportado");
+}
+
+async function crearEjercicioImportado(d, id, orden) {
+  const tipo = d.tipo === "descanso" ? "descanso" : "reps";
+  let fotoInicial = null;
+  let fotoFinal = null;
+  try { fotoInicial = await dataURLABlob(d.fotoInicial); } catch (e) {}
+  try { fotoFinal = await dataURLABlob(d.fotoFinal); } catch (e) {}
+  const ej = {
+    id: id,
+    nombre: String(d.nombre || "").trim() || (tipo === "descanso" ? "Descanso" : "Ejercicio importado"),
+    tipo: tipo,
+    emoji: String(d.emoji || "").trim() || (tipo === "descanso" ? "⏸️" : "💪"),
+    grupo: String(d.grupo || "").trim(),
+    reps: Math.max(1, Number(d.reps) || 8),
+    bajadaSeg: Math.max(0, Number(d.bajadaSeg) || 0),
+    subidaSeg: Math.max(0, Number(d.subidaSeg) || 0),
+    aguanteAbajoSeg: 0,
+    aguanteArribaSeg: 0,
+    descansoSeg: Math.max(0, Number(d.descansoSeg) || 0),
+    segundos: Math.max(1, Number(d.segundos) || 60),
+    orden: orden,
+    fotoInicial: fotoInicial,
+    fotoFinal: fotoFinal,
+    etiquetaAbajo: String(d.etiquetaAbajo || "").trim() || "ABAJO",
+    etiquetaArriba: String(d.etiquetaArriba || "").trim() || "ARRIBA",
+    ordenFases: d.ordenFases === "subida" ? "subida" : "bajada",
+    peso: String(d.peso || "").trim()
+  };
+  ej.aguanteAbajoSeg = clamp(Number(d.aguanteAbajoSeg) || 0, 0, ej.bajadaSeg);
+  ej.aguanteArribaSeg = clamp(Number(d.aguanteArribaSeg) || 0, 0, ej.subidaSeg);
+  if (tipo === "descanso") {
+    ej.bajadaSeg = 0;
+    ej.subidaSeg = 0;
+    ej.aguanteAbajoSeg = 0;
+    ej.aguanteArribaSeg = 0;
+    ej.peso = "";
+  }
+  return ej;
+}
+
+async function actualizarEjercicioImportado(existente, d) {
+  const copia = Object.assign({}, existente);
+  const nombre = String(d.nombre || "").trim();
+  if (nombre) copia.nombre = nombre;
+  const emoji = String(d.emoji || "").trim();
+  if (emoji) copia.emoji = emoji;
+  const grupo = String(d.grupo || "").trim();
+  if (grupo) copia.grupo = grupo;
+  const peso = String(d.peso || "").trim();
+  if (peso) copia.peso = peso;
+  const etiquetaAbajo = String(d.etiquetaAbajo || "").trim();
+  if (etiquetaAbajo) copia.etiquetaAbajo = etiquetaAbajo;
+  const etiquetaArriba = String(d.etiquetaArriba || "").trim();
+  if (etiquetaArriba) copia.etiquetaArriba = etiquetaArriba;
+  if (d.ordenFases === "subida" || d.ordenFases === "bajada") copia.ordenFases = d.ordenFases;
+  if (Number(d.reps) > 0) copia.reps = Number(d.reps);
+  if (Number(d.bajadaSeg) > 0) copia.bajadaSeg = Number(d.bajadaSeg);
+  if (Number(d.subidaSeg) > 0) copia.subidaSeg = Number(d.subidaSeg);
+  if (Number(d.aguanteAbajoSeg) > 0) copia.aguanteAbajoSeg = Number(d.aguanteAbajoSeg);
+  if (Number(d.aguanteArribaSeg) > 0) copia.aguanteArribaSeg = Number(d.aguanteArribaSeg);
+  if (Number(d.descansoSeg) > 0) copia.descansoSeg = Number(d.descansoSeg);
+  if (Number(d.segundos) > 0) copia.segundos = Number(d.segundos);
+  if (d.fotoInicial) {
+    try {
+      const b = await dataURLABlob(d.fotoInicial);
+      if (b) copia.fotoInicial = b;
+    } catch (e) {}
+  }
+  if (d.fotoFinal) {
+    try {
+      const b = await dataURLABlob(d.fotoFinal);
+      if (b) copia.fotoFinal = b;
+    } catch (e) {}
+  }
+  if (esDescanso(copia)) {
+    copia.bajadaSeg = 0;
+    copia.subidaSeg = 0;
+    copia.aguanteAbajoSeg = 0;
+    copia.aguanteArribaSeg = 0;
+    copia.peso = "";
+  } else {
+    copia.aguanteAbajoSeg = clamp(Number(copia.aguanteAbajoSeg) || 0, 0, Number(copia.bajadaSeg) || 0);
+    copia.aguanteArribaSeg = clamp(Number(copia.aguanteArribaSeg) || 0, 0, Number(copia.subidaSeg) || 0);
+  }
+  return copia;
+}
+
+async function importarPlanArchivo(archivo) {
+  let datos;
+  try { datos = JSON.parse(await archivo.text()); } catch (e) { aviso("El archivo no es válido"); return; }
+  if (!datos || datos.app !== "rutinas" || datos.tipo !== "plan" || !datos.plan || !Array.isArray(datos.plan.entradas) || !Array.isArray(datos.ejercicios)) {
+    aviso("El archivo no es un plan de Rutinas. Usa Importar respaldo para un respaldo completo.");
+    return;
+  }
+  if (!datos.plan.entradas.length) { aviso("El plan no tiene series"); return; }
+
+  const nombre = String(datos.plan.nombre || "").trim() || "Plan importado";
+  const usados = new Set(datos.plan.entradas.map(e => e.ejercicioId));
+  const resolucion = [];
+  const mapa = new Map();
+  const vistos = new Set();
+  for (const d of datos.ejercicios) {
+    if (!d || !d.id || !usados.has(d.id) || vistos.has(d.id)) continue;
+    vistos.add(d.id);
+    const tipo = d.tipo === "descanso" ? "descanso" : "reps";
+    const norm = normalizarBusqueda(d.nombre);
+    let existente = estado.ejercicios.find(e =>
+      e.id === d.id && (e.tipo === "descanso" ? "descanso" : "reps") === tipo
+    );
+    if (!existente && norm) {
+      existente = estado.ejercicios.find(e =>
+        normalizarBusqueda(e.nombre) === norm &&
+        (e.tipo === "descanso" ? "descanso" : "reps") === tipo
+      );
+    }
+    const id = existente ? existente.id : uid();
+    mapa.set(d.id, id);
+    resolucion.push({ datos: d, existente: existente || null, id: id });
+  }
+  for (const ent of datos.plan.entradas) {
+    if (!mapa.has(ent.ejercicioId)) {
+      aviso("El plan tiene una serie de un ejercicio que no viene en el archivo");
+      return;
+    }
+  }
+
+  const planExistente = estado.planes.find(p => normalizarBusqueda(p.nombre) === normalizarBusqueda(nombre));
+  const actualizados = resolucion.filter(r => r.existente).length;
+  const nuevos = resolucion.length - actualizados;
+  const resumen = "Se " + (planExistente ? "actualizará" : "agregará") + " el plan \"" + nombre + "\" con " + datos.plan.entradas.length + " series. " +
+    "Se actualizarán " + actualizados + " ejercicios y se agregarán " + nuevos + "." +
+    (planExistente ? " Los días que ya tenga asignados se conservan." : "");
+
+  confirmar("Importar plan", resumen, "Importar", async () => {
+    const plan = planExistente || {
+      id: uid(),
+      nombre: nombre,
+      color: COLORES[estado.planes.length % COLORES.length],
+      entradas: []
+    };
+
+    let ordenBase = estado.ejercicios.reduce((m, e) => Math.max(m, Number(e.orden) || 0), 0);
+    for (const r of resolucion) {
+      if (r.existente) {
+        const actualizado = await actualizarEjercicioImportado(r.existente, r.datos);
+        const i = estado.ejercicios.findIndex(e => e.id === actualizado.id);
+        if (i >= 0) estado.ejercicios[i] = actualizado;
+        await dbGuardar("ejercicios", actualizado);
+      } else {
+        const nuevo = await crearEjercicioImportado(r.datos, r.id, ++ordenBase);
+        estado.ejercicios.push(nuevo);
+        await dbGuardar("ejercicios", nuevo);
+      }
+    }
+
+    const entradas = datos.plan.entradas.map(ent => {
+      const bajada = Math.max(0, Number(ent.bajadaSeg) || 0);
+      const subida = Math.max(0, Number(ent.subidaSeg) || 0);
+      return {
+        uid: uid(),
+        ejercicioId: mapa.get(ent.ejercicioId),
+        reps: Math.max(1, Number(ent.reps) || 1),
+        bajadaSeg: bajada,
+        subidaSeg: subida,
+        aguanteAbajoSeg: clamp(Number(ent.aguanteAbajoSeg) || 0, 0, bajada),
+        aguanteArribaSeg: clamp(Number(ent.aguanteArribaSeg) || 0, 0, subida),
+        descansoSeg: Math.max(0, Number(ent.descansoSeg) || 0),
+        segundos: Math.max(1, Number(ent.segundos) || 60),
+        ordenFases: ent.ordenFases === "subida" ? "subida" : "bajada"
+      };
+    });
+
+    plan.nombre = nombre;
+    if (colorPlanValido(datos.plan.color)) plan.color = datos.plan.color;
+    else if (!colorPlanValido(plan.color)) plan.color = COLORES[estado.planes.length % COLORES.length];
+    plan.entradas = entradas;
+    await dbGuardar("planes", plan);
+    if (!planExistente) estado.planes.push(plan);
+
+    ordenarPlanes();
+    estado.ejercicios.sort((a, b) => (a.orden || 99) - (b.orden || 99) || String(a.nombre).localeCompare(String(b.nombre)));
+    cerrarHoja();
+    pintarEjercicios();
+    pintarPlanes();
+    pintarInicio();
+    aviso("Plan importado: " + nombre);
+  });
+}
+
 /* ---------------- arrastrar series para reordenar ---------------- */
 
 const arrastre = {
@@ -3019,6 +3268,9 @@ document.addEventListener("click", async (ev) => {
       pintarAjustes();
       break;
     }
+    case "exportar-plan": abrirSelectorExportarPlan(); break;
+    case "exportar-plan-elegido": await exportarPlan(id); break;
+    case "importar-plan": $("#input-importar-plan").click(); break;
     case "exportar": await exportar(); break;
     case "importar": $("#input-importar").click(); break;
     case "borrar-historial": {
@@ -3162,6 +3414,12 @@ document.addEventListener("change", async (ev) => {
     const archivo = t.files && t.files[0];
     t.value = "";
     if (archivo) await importarArchivo(archivo);
+  }
+
+  if (t.id === "input-importar-plan") {
+    const archivo = t.files && t.files[0];
+    t.value = "";
+    if (archivo) await importarPlanArchivo(archivo);
   }
 });
 

@@ -73,6 +73,12 @@ teléfono con IndexedDB. **No se sube nada a GitHub.**
 Para no perderlo: **Ajustes → Exportar respaldo**. Guarda ese `.json` fuera de
 esta carpeta (no lo subas al repo). Para restaurar: **Importar respaldo**.
 
+Además, en Ajustes se puede **exportar/importar un solo plan**. El archivo
+incluye el plan y los ejercicios que usa, con sus fotos. Al importar, si el plan
+o un ejercicio ya existen se actualizan con lo que trae el archivo (los campos
+vacíos o en 0 respetan lo que ya hay); si no, se agregan. La semana, el historial
+y los ajustes solo van en el respaldo completo.
+
 ## Publicar cambios
 
 1. Editar los archivos de esta carpeta.
