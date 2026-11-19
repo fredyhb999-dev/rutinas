@@ -77,7 +77,8 @@ Además, en Ajustes se puede **exportar/importar un solo plan**. El archivo
 incluye el plan y los ejercicios que usa, con sus fotos. Al importar, si el plan
 o un ejercicio ya existen se actualizan con lo que trae el archivo (los campos
 vacíos o en 0 respetan lo que ya hay); si no, se agregan. La semana, el historial
-y los ajustes solo van en el respaldo completo.
+y los ajustes solo van en el respaldo completo. El formato del archivo está en
+[`FORMATO-PLAN.md`](FORMATO-PLAN.md).
 
 ## Publicar cambios
 
