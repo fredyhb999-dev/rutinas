@@ -1648,7 +1648,6 @@ function iniciarSwipeFila(ev) {
   filaArrastre.dx = filaArrastre.dx0;
   filaArrastre.movido = false;
   filaArrastre.eraAbierta = eraAbierta;
-  try { wrap.setPointerCapture(ev.pointerId); } catch (e) {}
 }
 
 function moverSwipeFila(ev) {
