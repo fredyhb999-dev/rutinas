@@ -176,6 +176,10 @@ async function cargarTodo() {
   estado.semana = res[3] || { clave: CLAVE_SEMANA };
   estado.historial = res[4].sort((a, b) => b.fecha - a.fecha);
 
+  const semanaNormalizada = normalizarSemana(estado.semana);
+  estado.semana = semanaNormalizada.semana;
+  if (semanaNormalizada.cambios) await guardarSemana();
+
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 }
 
@@ -274,6 +278,59 @@ function historialDelDia(clave) {
   return estado.historial.filter(h => h.fechaClave === clave);
 }
 
+/* La semana guarda una lista de planes por día. Los respaldos viejos traían
+   un solo plan (o null); se convierten aquí sin perder nada. */
+function normalizarSemana(semana) {
+  const base = Object.assign({}, semana || {});
+  let cambios = false;
+  DIAS.forEach(d => {
+    const valor = base[d];
+    let ids;
+    if (Array.isArray(valor)) {
+      ids = [];
+      valor.forEach(id => {
+        if (typeof id === "string" && id && !ids.includes(id)) ids.push(id);
+      });
+      if (ids.length !== valor.length) cambios = true;
+    } else if (typeof valor === "string" && valor) {
+      ids = [valor];
+      cambios = true;
+    } else {
+      ids = [];
+      if (valor !== undefined && valor !== null) cambios = true;
+    }
+    base[d] = ids;
+  });
+  if (!base.clave) {
+    base.clave = CLAVE_SEMANA;
+    cambios = true;
+  }
+  Object.keys(base).forEach(k => {
+    if (k !== "clave" && !DIAS.includes(k)) {
+      delete base[k];
+      cambios = true;
+    }
+  });
+  return { semana: base, cambios: cambios };
+}
+
+function idsDelDia(dia) {
+  const ids = estado.semana[dia];
+  return Array.isArray(ids) ? ids : [];
+}
+
+function planesDelDia(dia) {
+  return idsDelDia(dia).map(planPorId).filter(Boolean);
+}
+
+function planEstaEnDia(dia, id) {
+  return idsDelDia(dia).includes(id);
+}
+
+function planesHechos(clave) {
+  return new Set(historialDelDia(clave).map(h => h.planId).filter(Boolean));
+}
+
 /* ---------------- inicio ---------------- */
 
 function pintarInicio() {
@@ -292,22 +349,48 @@ function pintarInicio() {
     chip.hidden = true;
   }
 
-  const plan = planPorId(estado.semana[hoy]);
+  const planes = planesDelDia(hoy);
+  const hechos = planesHechos(fechaClaveDe(hoy));
+  const listaHoy = $("#lista-hoy");
+  const primerPlan = planes[0] || null;
+  const colorHoy = primerPlan ? primerPlan.color : "#3a4356";
   $("#hoy-etiqueta").textContent = DIAS_LARGOS[DIAS.indexOf(hoy)].toUpperCase();
-  $("#hoy-punto").style.background = plan ? plan.color : "#3a4356";
-  $("#hoy-punto").style.color = plan ? plan.color : "#3a4356";
+  $("#hoy-punto").style.background = colorHoy;
+  $("#hoy-punto").style.color = colorHoy;
 
-  if (plan) {
-    $("#hoy-nombre").textContent = plan.nombre;
-    const sets = contarSeries(plan);
-    $("#hoy-meta").textContent = sets + " series · " + fmtDuracion(estimarPlan(plan)) + " · " + contarReps(plan) + " reps";
+  if (planes.length === 1) {
+    $("#hoy-nombre").textContent = primerPlan.nombre;
+    $("#hoy-meta").textContent = contarSeries(primerPlan) + " series · " + fmtDuracion(estimarPlan(primerPlan)) + " · " + contarReps(primerPlan) + " reps";
+    $("#hoy-hecho").hidden = !hechos.has(primerPlan.id);
     $("#btn-comenzar").hidden = false;
     $("#btn-elegir").textContent = "Cambiar plan";
+    listaHoy.hidden = true;
+    listaHoy.innerHTML = "";
+  } else if (planes.length > 1) {
+    const totalSeries = planes.reduce((n, p) => n + contarSeries(p), 0);
+    const totalSeg = planes.reduce((n, p) => n + estimarPlan(p), 0);
+    $("#hoy-nombre").textContent = planes.length + " planes";
+    $("#hoy-meta").textContent = totalSeries + " series · " + fmtDuracion(totalSeg) + " en total";
+    $("#hoy-hecho").hidden = true;
+    $("#btn-comenzar").hidden = true;
+    $("#btn-elegir").textContent = "Cambiar plan";
+    listaHoy.hidden = false;
+    listaHoy.innerHTML = planes.map(p => {
+      const hecho = hechos.has(p.id);
+      return '<button type="button" class="fila-plan fila-hoy' + (hecho ? " hecha" : "") + '" data-accion="entrenar-plan" data-id="' + esc(p.id) + '">' +
+        '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
+        '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong><small>' + contarSeries(p) + ' series · ' + fmtDuracion(estimarPlan(p)) + '</small></span>' +
+        (hecho ? '<span class="fila-estado">✓ Hecho</span>' : '<span class="fila-play">▶</span>') +
+        '</button>';
+    }).join("");
   } else {
     $("#hoy-nombre").textContent = "Día libre";
     $("#hoy-meta").textContent = "Hoy no tienes plan asignado";
+    $("#hoy-hecho").hidden = true;
     $("#btn-comenzar").hidden = true;
     $("#btn-elegir").textContent = "Elegir plan";
+    listaHoy.hidden = true;
+    listaHoy.innerHTML = "";
   }
 
   const snap = leerSnapshot();
@@ -326,11 +409,13 @@ function pintarInicio() {
 function pintarSemana() {
   const hoy = claveHoy();
   $("#tira-semana").innerHTML = DIAS.map((d, i) => {
-    const plan = planPorId(estado.semana[d]);
+    const planes = planesDelDia(d);
     const hecho = historialDelDia(fechaClaveDe(d)).length > 0;
-    return '<button class="dia' + (d === hoy ? " hoy" : "") + '" data-accion="dia-semana" data-dia="' + d + '" style="--color:' + (plan ? plan.color : "rgba(255,255,255,.12)") + '">' +
+    const color = planes.length ? planes[0].color : "rgba(255,255,255,.12)";
+    return '<button class="dia' + (d === hoy ? " hoy" : "") + '" data-accion="dia-semana" data-dia="' + d + '" style="--color:' + color + '">' +
       '<span class="dia-letra">' + DIAS_CORTOS[i] + '</span>' +
       '<span class="dia-punto"></span>' +
+      (planes.length > 1 ? '<span class="dia-cant">' + planes.length + '</span>' : "") +
       '<span class="dia-check">' + (hecho ? "✓" : "") + '</span>' +
       '</button>';
   }).join("");
@@ -1720,7 +1805,7 @@ function pintarPlanes() {
   } else {
     html += '<div class="lista">';
     estado.planes.forEach(p => {
-      const dias = DIAS.filter(d => estado.semana[d] === p.id).map(d => DIAS_CORTOS[DIAS.indexOf(d)]).join(" · ");
+      const dias = DIAS.filter(d => planEstaEnDia(d, p.id)).map(d => DIAS_CORTOS[DIAS.indexOf(d)]).join(" · ");
       html += '<button type="button" class="fila-plan" data-accion="editar-plan" data-id="' + esc(p.id) + '">' +
         '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
         '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong>' +
@@ -1732,10 +1817,16 @@ function pintarPlanes() {
 
   html += '<div class="seccion-ajustes"><h2>Asignar a la semana</h2><div class="semana-config">';
   DIAS.forEach((d, i) => {
-    const plan = planPorId(estado.semana[d]);
+    const planes = planesDelDia(d);
+    const resumen = !planes.length
+      ? "Descanso"
+      : planes.length === 1
+        ? planes[0].nombre
+        : planes[0].nombre + " +" + (planes.length - 1);
+    const color = planes.length ? planes[0].color : "";
     html += '<button type="button" class="dia-config" data-accion="semana-dia" data-dia="' + d + '">' +
       '<span>' + DIAS_LARGOS[i] + '</span>' +
-      '<small' + (plan ? ' style="color:' + esc(plan.color) + '"' : '') + '>' + esc(plan ? plan.nombre : "Descanso") + '</small>' +
+      '<small' + (color ? ' style="color:' + esc(color) + '"' : '') + '>' + esc(resumen) + '</small>' +
       '</button>';
   });
   html += '</div></div>';
@@ -1936,23 +2027,19 @@ function cerrarHoja() {
 }
 
 function abrirSelectorPlan(dia) {
-  estado.hojaTipo = "selector-plan";
   estado.diaSelector = dia || null;
-  const actual = dia ? estado.semana[dia] : estado.planId;
-  let html = '<p class="nota">' +
-    (dia ? "Elige el plan para el " + DIAS_LARGOS[DIAS.indexOf(dia)].toLowerCase() : "Elige el plan que quieres entrenar") +
-    '</p><div class="lista">';
-
   if (dia) {
-    html += '<button type="button" class="fila-plan" data-accion="asignar-dia" data-id="">' +
-      '<span class="punto" style="background:#3a4356;color:#3a4356"></span>' +
-      '<span class="fila-texto"><strong>Descanso</strong><small>Sin entrenamiento</small></span>' +
-      (actual ? '<span class="fila-flecha">›</span>' : '<span class="fila-flecha">✓</span>') +
-      '</button>';
+    estado.hojaTipo = "selector-dia";
+    abrirHoja("Planes del " + DIAS_LARGOS[DIAS.indexOf(dia)].toLowerCase(), htmlSelectorDia(dia));
+    return;
   }
 
+  estado.hojaTipo = "selector-plan";
+  const actual = estado.planId;
+  let html = '<p class="nota">Elige el plan que quieres entrenar</p><div class="lista">';
+
   estado.planes.forEach(p => {
-    html += '<button type="button" class="fila-plan" data-accion="' + (dia ? "asignar-dia" : "entrenar-plan") + '" data-id="' + esc(p.id) + '">' +
+    html += '<button type="button" class="fila-plan" data-accion="entrenar-plan" data-id="' + esc(p.id) + '">' +
       '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
       '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong><small>' + contarSeries(p) + ' series · ' + fmtDuracion(estimarPlan(p)) + '</small></span>' +
       (p.id === actual ? '<span class="fila-flecha">✓</span>' : '<span class="fila-flecha">›</span>') +
@@ -1960,7 +2047,41 @@ function abrirSelectorPlan(dia) {
   });
 
   html += '</div>';
-  abrirHoja(dia ? "Plan del día" : "Elegir plan", html);
+  if (!estado.planes.length) html += '<p class="nota">Todavía no tienes planes.</p>';
+  abrirHoja("Elegir plan", html);
+}
+
+function htmlSelectorDia(dia) {
+  const ids = idsDelDia(dia);
+  const hechos = planesHechos(fechaClaveDe(dia));
+  let html = '<p class="nota">Marca uno o varios planes para este día. El check de un plan es del día en que lo terminaste.</p><div class="lista">';
+
+  estado.planes.forEach(p => {
+    const dentro = ids.includes(p.id);
+    const hecho = hechos.has(p.id);
+    html += '<button type="button" class="fila-plan' + (dentro ? " activa" : "") + '" data-accion="alternar-dia" data-id="' + esc(p.id) + '">' +
+      '<span class="punto" style="background:' + esc(p.color) + ';color:' + esc(p.color) + '"></span>' +
+      '<span class="fila-texto"><strong>' + esc(p.nombre) + '</strong><small>' + contarSeries(p) + ' series · ' + fmtDuracion(estimarPlan(p)) + (hecho ? ' · ✓ Hecho' : '') + '</small></span>' +
+      '<span class="fila-check">' + (dentro ? "✓" : "") + '</span>' +
+      '</button>';
+  });
+
+  html += '</div>';
+  if (!estado.planes.length) html += '<p class="nota">Todavía no tienes planes.</p>';
+  if (estado.planes.length) {
+    html += '<button type="button" class="btn btn-secundario btn-grande" style="margin-top:10px" data-accion="dia-libre">Día libre</button>';
+  }
+  html += '<button type="button" class="btn btn-principal btn-grande" style="margin-top:10px" data-accion="cerrar-hoja">Listo</button>';
+  return html;
+}
+
+function refrescarSelectorDia() {
+  const dia = estado.diaSelector;
+  const cuerpo = $("#hoja-cuerpo");
+  if (!dia || !cuerpo) return;
+  const scroll = cuerpo.scrollTop;
+  cuerpo.innerHTML = htmlSelectorDia(dia);
+  cuerpo.scrollTop = scroll;
 }
 
 /* ---------------- editor de ejercicio ---------------- */
@@ -2201,7 +2322,7 @@ function htmlEditorPlan() {
   ).join("");
 
   const dias = DIAS.map((d, i) =>
-    '<button type="button" class="dia-chip' + (estado.semana[d] === plan.id ? " on" : "") + '" data-accion="plan-dia" data-dia="' + d + '">' + DIAS_CORTOS[i] + '</button>'
+    '<button type="button" class="dia-chip' + (planEstaEnDia(d, plan.id) ? " on" : "") + '" data-accion="plan-dia" data-dia="' + d + '">' + DIAS_CORTOS[i] + '</button>'
   ).join("");
 
   const asaHtml = '<button type="button" class="asa-arrastre" aria-label="Mover serie" title="Mantén presionado y arrastra">' +
@@ -2484,7 +2605,7 @@ async function exportar() {
   }
   const datos = {
     app: "rutinas",
-    version: 2,
+    version: 3,
     exportado: new Date().toISOString(),
     config: estado.config,
     semana: estado.semana,
@@ -2520,7 +2641,7 @@ async function importarArchivo(archivo) {
     }
     for (const p of datos.planes) await dbGuardar("planes", p);
     await dbGuardar("ajustes", Object.assign({}, CONFIG_DEFECTO, datos.config || {}));
-    await dbGuardar("semana", datos.semana || { clave: CLAVE_SEMANA });
+    await dbGuardar("semana", normalizarSemana(datos.semana).semana);
     if (Array.isArray(datos.historial)) {
       for (const h of datos.historial) {
         if (h && typeof h.id === "number") await dbGuardar("historial", h);
@@ -3005,12 +3126,13 @@ document.addEventListener("click", async (ev) => {
     case "tab": estado.tab = el.dataset.tab; pintarConfig(); break;
 
     case "comenzar": {
-      const plan = planPorId(estado.semana[claveHoy()]);
-      if (plan) irEntrenar(plan.id);
-      else abrirSelectorPlan(null);
+      const planes = planesDelDia(claveHoy());
+      if (planes.length === 1) irEntrenar(planes[0].id);
+      else abrirSelectorPlan(claveHoy());
       break;
     }
-    case "elegir-plan": abrirSelectorPlan(null); break;
+    case "elegir-plan": abrirSelectorPlan(claveHoy()); break;
+    case "elegir-plan-entrenar": abrirSelectorPlan(null); break;
     case "ejercicio-rapido": abrirEjercicioRapido(); break;
     case "reanudar": {
       const snap = leerSnapshot();
@@ -3021,15 +3143,28 @@ document.addEventListener("click", async (ev) => {
     }
     case "dia-semana": abrirSelectorPlan(el.dataset.dia); break;
     case "semana-dia": abrirSelectorPlan(el.dataset.dia); break;
-    case "asignar-dia": {
+    case "alternar-dia": {
       const dia = estado.diaSelector;
-      if (!dia) break;
-      estado.semana[dia] = id || null;
+      if (!dia || !id) break;
+      const ids = idsDelDia(dia);
+      estado.semana[dia] = ids.includes(id)
+        ? ids.filter(x => x !== id)
+        : ids.concat(id);
       await guardarSemana();
-      cerrarHoja();
+      refrescarSelectorDia();
       pintarInicio();
       if (estado.tab === "planes") pintarPlanes();
-      aviso(id ? "Plan asignado al " + DIAS_LARGOS[DIAS.indexOf(dia)].toLowerCase() : "Día de descanso");
+      break;
+    }
+    case "dia-libre": {
+      const dia = estado.diaSelector;
+      if (!dia) break;
+      estado.semana[dia] = [];
+      await guardarSemana();
+      refrescarSelectorDia();
+      pintarInicio();
+      if (estado.tab === "planes") pintarPlanes();
+      aviso("Día libre");
       break;
     }
     case "entrenar-plan": {
@@ -3117,8 +3252,10 @@ document.addEventListener("click", async (ev) => {
       const plan = estado.planBorrador;
       if (!plan) break;
       const dia = el.dataset.dia;
-      if (estado.semana[dia] === plan.id) estado.semana[dia] = null;
-      else estado.semana[dia] = plan.id;
+      const ids = idsDelDia(dia);
+      estado.semana[dia] = ids.includes(plan.id)
+        ? ids.filter(x => x !== plan.id)
+        : ids.concat(plan.id);
       await guardarSemana();
       $("#hoja-cuerpo").innerHTML = htmlEditorPlan();
       break;
@@ -3169,7 +3306,7 @@ document.addEventListener("click", async (ev) => {
       const plan = estado.planBorrador;
       if (!plan) break;
       confirmar("Eliminar plan", "¿Eliminar el plan \"" + plan.nombre + "\" de la lista y de la semana?", "Eliminar", async () => {
-        DIAS.forEach(d => { if (estado.semana[d] === plan.id) estado.semana[d] = null; });
+        DIAS.forEach(d => { estado.semana[d] = idsDelDia(d).filter(x => x !== plan.id); });
         await guardarSemana();
         await dbBorrar("planes", plan.id);
         estado.planes = estado.planes.filter(p => p.id !== plan.id);

@@ -149,7 +149,7 @@ async function sembrarSiHaceFalta() {
   const dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
   for (i = 0; i < dias.length; i++) {
     const d = dias[i];
-    semana[d] = (d === "lunes" || d === "miercoles" || d === "viernes") ? "plan-cuerpo-completo" : null;
+    semana[d] = (d === "lunes" || d === "miercoles" || d === "viernes") ? ["plan-cuerpo-completo"] : [];
   }
   await dbGuardar("semana", semana);
   return true;

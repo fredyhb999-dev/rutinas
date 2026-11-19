@@ -44,7 +44,7 @@ La llave de firma y sus cuidados están en `AGENTS.md`.
 
 ## Pantallas
 
-- **Inicio**: plan de hoy, duración, racha, semana, historial reciente y el botón
+- **Inicio**: planes de hoy, duración, racha, semana, historial reciente y el botón
   de ejercicio rápido (🏃) para improvisar una sesión sin crear un plan.
 - **Entrenar**: vista previa del plan y botón para comenzar.
 - **Runner**: foto del movimiento, cuenta atrás, series/reps, pausa, saltar,
@@ -65,13 +65,27 @@ que solo se muestra mientras se entrena.
 tantas veces como necesites y ajustar sus segundos. Además, cada serie tiene su
 propio "descanso después".
 
+## Planes y semana
+
+En la semana puedes poner **varios planes el mismo día**, y un plan puede
+repetirse en varios días. En Inicio ves los planes de hoy: si hay uno aparece su
+tarjeta con "Comenzar"; si hay varios aparecen en una lista y cada uno se empieza
+por separado.
+
+En la tira de la semana, un día se marca con ✓ cuando hiciste **al menos una**
+sesión ese día (también cuenta el ejercicio rápido). Cada plan se marca con ✓
+solo el día en que lo terminaste, aunque esté programado en más días. Los ✓ se
+calculan del historial y la tira muestra la semana actual, de lunes a domingo; al
+empezar otra semana, los ✓ anteriores dejan de verse.
+
 ## Datos y respaldo
 
 Todo (ejercicios, fotos, planes, historial) se guarda en el navegador del
 teléfono con IndexedDB. **No se sube nada a GitHub.**
 
 Para no perderlo: **Ajustes → Exportar respaldo**. Guarda ese `.json` fuera de
-esta carpeta (no lo subas al repo). Para restaurar: **Importar respaldo**.
+esta carpeta (no lo subas al repo). Para restaurar: **Importar respaldo**. Los
+respaldos viejos, con un solo plan por día, se convierten solos al importarlos.
 
 Además, en Ajustes se puede **exportar/importar un solo plan**. El archivo
 incluye el plan y los ejercicios que usa, con sus fotos. Al importar, si el plan
@@ -85,7 +99,8 @@ y los ajustes solo van en el respaldo completo. El formato del archivo está en
 1. Editar los archivos de esta carpeta.
 2. En GitHub Desktop: escribir el resumen → **Commit to main** → **Push origin**.
 3. Si cambió algún archivo cacheado, subir la versión en `sw.js`
-   (`const CACHE = "rutinas-v2";`) para que el teléfono reciba la actualización.
+   (`const CACHE = "rutinas-vN";`) y el `?v=N` de `index.html` para que el teléfono
+   reciba la actualización.
 4. En GitHub Pages tarda 1–2 minutos.
 
 ## Archivos

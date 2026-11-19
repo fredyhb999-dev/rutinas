@@ -43,10 +43,14 @@
     <article class="tarjeta-hoy" id="tarjeta-hoy">
       <div class="tarjeta-hoy-cab">
         <span class="etiqueta" id="hoy-etiqueta">HOY</span>
-        <span class="punto" id="hoy-punto"></span>
+        <span class="tarjeta-hoy-cab-der">
+          <span class="hoy-hecho" id="hoy-hecho" hidden>✓ Hecho hoy</span>
+          <span class="punto" id="hoy-punto"></span>
+        </span>
       </div>
       <h1 id="hoy-nombre">Sin plan</h1>
       <p class="tarjeta-hoy-meta" id="hoy-meta">Asigna un plan a este día</p>
+      <div class="lista lista-hoy" id="lista-hoy" hidden></div>
       <div class="tarjeta-hoy-botones">
         <button class="btn btn-principal" data-accion="comenzar" id="btn-comenzar">Comenzar</button>
         <button class="btn btn-secundario" data-accion="elegir-plan" id="btn-elegir">Elegir plan</button>
@@ -75,7 +79,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
     </button>
     <div class="barra-titulo" id="entrenar-titulo">Plan</div>
-    <button class="btn-icono" data-accion="elegir-plan" aria-label="Cambiar plan">
+    <button class="btn-icono" data-accion="elegir-plan-entrenar" aria-label="Cambiar plan">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>
     </button>
   </header>
@@ -211,6 +215,6 @@
 <input type="file" id="input-importar-plan" accept=".json,application/json" hidden>
 
 <script src="./db.js"></script>
-<script src="./app.js?v=22"></script>
+<script src="./app.js?v=23"></script>
 </body>
 </html>

@@ -115,6 +115,13 @@ lo que hay en `docs/` sea lo mismo que quedó dentro del APK.
   importar, lo que trae con valor manda: se actualiza el plan por nombre (conserva
   sus días) y los ejercicios existentes, y se agregan los que falten. Los campos
   vacíos o en 0 respetan lo que ya hay.
+- Un día puede tener **varios planes** y un plan puede repetirse en varios días.
+  La semana se guarda como lista de planes por día; los respaldos viejos (un plan
+  o `null`) se convierten solos al cargar o importar.
+- El ✓ de un plan es de **ese plan en ese día**: se marca solo el día en que se
+  terminó, aunque el plan esté programado en más días. El ✓ del día en la tira se
+  marca con al menos una sesión (también cuenta el ejercicio rápido). Todo sale
+  del historial y la tira muestra solo la semana actual, de lunes a domingo.
 
 ## Pendiente
 

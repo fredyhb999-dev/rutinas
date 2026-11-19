@@ -204,6 +204,24 @@ img{display:block;max-width:100%}
 }
 .tarjeta-hoy-meta{color:var(--tenue);font-size:.9rem;margin-bottom:18px}
 .tarjeta-hoy-botones{display:flex;flex-direction:column;gap:10px}
+.tarjeta-hoy-cab-der{display:flex;align-items:center;gap:10px}
+.hoy-hecho{
+  font-size:.64rem;font-weight:800;letter-spacing:.06em;color:var(--lima);
+  background:rgba(198,255,61,.12);border:1px solid rgba(198,255,61,.3);
+  padding:4px 9px;border-radius:99px;white-space:nowrap;
+}
+.lista-hoy{margin-bottom:18px}
+.fila-hoy.hecha{border-color:rgba(198,255,61,.32);background:rgba(198,255,61,.06)}
+.fila-estado{
+  font-size:.68rem;font-weight:800;color:var(--lima);
+  white-space:nowrap;margin-left:4px;
+}
+.fila-play{
+  flex:0 0 24px;width:24px;height:24px;margin-left:4px;
+  border-radius:50%;display:grid;place-items:center;
+  background:rgba(198,255,61,.12);color:var(--lima);
+  font-size:.58rem;line-height:1;
+}
 
 .bloque{margin-top:22px}
 .bloque-cab{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px}
@@ -233,6 +251,13 @@ img{display:block;max-width:100%}
   background:var(--color,transparent);
 }
 .dia-check{font-size:.62rem;color:var(--lima);height:10px;line-height:1}
+.dia-cant{
+  position:absolute;top:4px;right:3px;
+  min-width:13px;height:13px;padding:0 2px;
+  border-radius:99px;display:grid;place-items:center;
+  background:rgba(255,255,255,.16);color:#fff;
+  font-size:.5rem;font-weight:800;line-height:1;
+}
 
 /* historial */
 .lista-historial{display:flex;flex-direction:column;gap:6px}
@@ -542,6 +567,14 @@ img{display:block;max-width:100%}
   transition:background .18s ease,transform .12s ease;
 }
 .fila-ejercicio:active,.fila-plan:active{transform:scale(.99);background:rgba(255,255,255,.07)}
+.fila-plan.activa{border-color:rgba(198,255,61,.45);background:rgba(198,255,61,.08)}
+.fila-check{
+  flex:0 0 22px;width:22px;height:22px;margin-left:4px;
+  border-radius:50%;border:1.5px solid var(--borde);
+  display:grid;place-items:center;
+  font-size:.8rem;font-weight:800;color:var(--lima);
+}
+.fila-plan.activa .fila-check{background:rgba(198,255,61,.16);border-color:rgba(198,255,61,.55)}
 
 .buscador{
   display:flex;align-items:center;gap:8px;
